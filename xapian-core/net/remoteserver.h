@@ -184,6 +184,8 @@ class XAPIAN_VISIBILITY_DEFAULT RemoteServer : private RemoteConnection {
 
     void select_db(const std::vector<std::string> &dbpaths_, bool writable_, int flags);
 
+    void run_one();
+
   public:
     /** Construct a RemoteServer.
      *

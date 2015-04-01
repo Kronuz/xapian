@@ -166,9 +166,8 @@ RemoteServer::send_message(reply_type type, const string &message)
 typedef void (RemoteServer::* dispatch_func)(const string &);
 
 void
-RemoteServer::run()
+RemoteServer::run_one()
 {
-    while (true) {
 	try {
 	    /* This list needs to be kept in the same order as the list of
 	     * message types in "remoteprotocol.h". Note that messages at the
@@ -249,7 +248,6 @@ RemoteServer::run()
 	    // connection.
 	    throw;
 	}
-    }
 }
 
 void
@@ -929,4 +927,12 @@ RemoteServer::select_db(const std::vector<std::string> &dbpaths_, bool writable_
 	}
     }
     dbpaths = dbpaths_;
+}
+
+void
+RemoteServer::run()
+{
+    while (true) {
+    	run_one();
+    }
 }
