@@ -63,11 +63,40 @@ throw_no_db()
 /// Class to throw when we receive the connection closing message.
 struct ConnectionClosed { };
 
+
+/** Structure holding a match and a list of match spies.
+ *
+ *  The main reason for the existence of this structure is to allow passing
+ *  match state between query and mset. ensure that the match spies are all
+ *  deleted after use.
+ */
+struct MatchState {
+    Xapian::Database *db;
+    MultiMatch *match;
+    vector<Xapian::MatchSpy *> spies;
+    Xapian::Weight *wt;
+    MatchState() : match(NULL), wt(NULL) {}
+    ~MatchState() {
+	vector<Xapian::MatchSpy *>::const_iterator i;
+	for (i = spies.begin(); i != spies.end(); ++i) {
+	    delete *i;
+	}
+	if (match) {
+		delete match;
+	}
+	if (wt) {
+		delete wt;
+	}
+    }
+};
+
+
 RemoteServer::RemoteServer(const std::vector<std::string> &dbpaths_,
 			   int fdin_, int fdout_,
 			   double active_timeout_, double idle_timeout_,
 			   bool writable_)
     : RemoteConnection(fdin_, fdout_, std::string()),
+      matchstate(NULL), required_type(MSG_MAX),
       db(NULL), wdb(NULL), writable(writable_),
       active_timeout(active_timeout_), idle_timeout(idle_timeout_)
 {
@@ -100,11 +129,16 @@ RemoteServer::~RemoteServer()
 {
     delete db;
     // wdb is either NULL or equal to db, so we shouldn't delete it too!
+    if (matchstate != NULL) {
+	MatchState *matchstate_ = static_cast<MatchState *>(matchstate);
+	// matchstate_->db is equal to db, so we shouldn't delete it too!
+	delete matchstate_;
+    }
 }
 
 message_type
 RemoteServer::get_message(double timeout, string & result,
-			  message_type required_type)
+			  message_type required_type_)
 {
     double end_time = RealTime::end_time(timeout);
     unsigned int type = RemoteConnection::get_message(result, end_time);
@@ -116,9 +150,9 @@ RemoteServer::get_message(double timeout, string & result,
 	errmsg += str(type);
 	throw Xapian::NetworkError(errmsg);
     }
-    if (required_type != MSG_MAX && type != unsigned(required_type)) {
+    if (required_type_ != MSG_MAX && type != unsigned(required_type_)) {
 	string errmsg("Expecting message type ");
-	errmsg += str(int(required_type));
+	errmsg += str(int(required_type_));
 	errmsg += ", got ";
 	errmsg += str(int(type));
 	throw Xapian::NetworkError(errmsg);
@@ -173,8 +207,8 @@ RemoteServer::run()
 		&RemoteServer::msg_setmetadata,
 		&RemoteServer::msg_addspelling,
 		&RemoteServer::msg_removespelling,
-		0, // MSG_GETMSET - used during a conversation.
-		0, // MSG_SHUTDOWN - handled by get_message().
+		&RemoteServer::msg_getmset,
+		&RemoteServer::msg_shutdown,
 		&RemoteServer::msg_openmetadatakeylist,
 		&RemoteServer::msg_freqs,
 		&RemoteServer::msg_uniqueterms,
@@ -182,7 +216,7 @@ RemoteServer::run()
 	    };
 
 	    string message;
-	    size_t type = get_message(idle_timeout, message);
+	    size_t type = get_message(idle_timeout, message, required_type);
 	    if (type >= sizeof(dispatch)/sizeof(dispatch[0]) || !dispatch[type]) {
 		string errmsg("Unexpected message type ");
 		errmsg += str(type);
@@ -413,22 +447,6 @@ RemoteServer::msg_update(const string &)
     send_message(REPLY_UPDATE, message);
 }
 
-/** Structure holding a list of match spies.
- *
- *  The main reason for the existence of this structure is to make it easy to
- *  ensure that the match spies are all deleted after use.
- */
-struct MatchSpyList {
-    vector<Xapian::MatchSpy *> spies;
-
-    ~MatchSpyList() {
-	vector<Xapian::MatchSpy *>::const_iterator i;
-	for (i = spies.begin(); i != spies.end(); ++i) {
-	    delete *i;
-	}
-    }
-};
-
 void
 RemoteServer::msg_query(const string &message_in)
 {
@@ -494,8 +512,17 @@ RemoteServer::msg_query(const string &message_in)
 					   wtname + " not registered");
     }
 
+    MatchState * matchstate_;
+    if (matchstate != NULL) {
+	matchstate_ = static_cast<MatchState *>(matchstate);
+	delete matchstate_;
+    }
+
+    matchstate_ = new MatchState();
+    matchstate = matchstate_;
+
     len = decode_length(&p, p_end, true);
-    AutoPtr<Xapian::Weight> wt(wttype->unserialise(string(p, len)));
+    matchstate_->wt = wttype->unserialise(string(p, len));
     p += len;
 
     // Unserialise the RSet object.
@@ -504,7 +531,6 @@ RemoteServer::msg_query(const string &message_in)
     p += len;
 
     // Unserialise any MatchSpy objects.
-    MatchSpyList matchspies;
     while (p != p_end) {
 	len = decode_length(&p, p_end, true);
 	string spytype(p, len);
@@ -516,7 +542,7 @@ RemoteServer::msg_query(const string &message_in)
 	p += len;
 
 	len = decode_length(&p, p_end, true);
-	matchspies.spies.push_back(spyclass->unserialise(string(p, len), reg));
+	matchstate_->spies.push_back(spyclass->unserialise(string(p, len), reg));
 	p += len;
     }
 
@@ -524,17 +550,29 @@ RemoteServer::msg_query(const string &message_in)
 	throw_no_db();
 
     Xapian::Weight::Internal local_stats;
-    MultiMatch match(*db, query, qlen, &rset, collapse_max, collapse_key,
+    matchstate_->match = new MultiMatch(*db, query, qlen, &rset, collapse_max, collapse_key,
 		     percent_cutoff, weight_cutoff, order,
 		     sort_key, sort_by, sort_value_forward, time_limit, NULL,
-		     local_stats, wt.get(), matchspies.spies, false, false);
+		     local_stats, matchstate_->wt, matchstate_->spies, false, false);
+    matchstate_->db = db;
 
     send_message(REPLY_STATS, serialise_stats(local_stats));
 
-    string message;
-    get_message(active_timeout, message, MSG_GETMSET);
-    p = message.c_str();
-    p_end = p + message.size();
+    required_type = MSG_GETMSET;
+}
+
+void
+RemoteServer::msg_getmset(const string & msg)
+{
+    if (matchstate == NULL) {
+	required_type = MSG_MAX;
+	throw Xapian::NetworkError("Unexpected MSG_GETMSET");
+    }
+
+    MatchState *matchstate_ = static_cast<MatchState *>(matchstate);
+
+    const char *p = msg.c_str();
+    const char *p_end = p + msg.size();
 
     Xapian::termcount first = decode_length(&p, p_end, false);
     Xapian::termcount maxitems = decode_length(&p, p_end, false);
@@ -542,24 +580,29 @@ RemoteServer::msg_query(const string &message_in)
     Xapian::termcount check_at_least = 0;
     check_at_least = decode_length(&p, p_end, false);
 
-    message.erase(0, message.size() - (p_end - p));
+    std::string message(p, p_end);
     AutoPtr<Xapian::Weight::Internal> total_stats(new Xapian::Weight::Internal);
     unserialise_stats(message, *(total_stats.get()));
-    total_stats->set_bounds_from_db(*db);
+    total_stats->set_bounds_from_db(*matchstate_->db);
 
     Xapian::MSet mset;
-    match.get_mset(first, maxitems, check_at_least, mset, *(total_stats.get()), 0, 0);
+    matchstate_->match->get_mset(first, maxitems, check_at_least, mset, *(total_stats.get()), 0, 0);
     mset.internal->stats = total_stats.release();
 
     message.resize(0);
     vector<Xapian::MatchSpy *>::const_iterator i;
-    for (i = matchspies.spies.begin(); i != matchspies.spies.end(); ++i) {
+    for (i = matchstate_->spies.begin(); i != matchstate_->spies.end(); ++i) {
 	string spy_results = (*i)->serialise_results();
 	message += encode_length(spy_results.size());
 	message += spy_results;
     }
     message += serialise_mset(mset);
     send_message(REPLY_RESULTS, message);
+
+    matchstate = NULL;
+    required_type = MSG_MAX;
+
+    delete matchstate_;
 }
 
 void
@@ -826,6 +869,11 @@ RemoteServer::msg_addspelling(const string & message)
     const char *p_end = p + message.size();
     Xapian::termcount freqinc = decode_length(&p, p_end, false);
     wdb->add_spelling(string(p, p_end - p), freqinc);
+}
+
+void
+RemoteServer::msg_shutdown(const string &)
+{
 }
 
 void
