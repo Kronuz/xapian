@@ -33,39 +33,39 @@ namespace Xapian {
 
 Database
 Remote::open(const string &host, unsigned int port, useconds_t timeout_,
-	     useconds_t connect_timeout)
+	     useconds_t connect_timeout, const string &dir)
 {
-    LOGCALL_STATIC(API, Database, "Remote::open", host | port | timeout_ | connect_timeout);
+    LOGCALL_STATIC(API, Database, "Remote::open", host | port | timeout_ | connect_timeout | dir);
     RETURN(Database(new RemoteTcpClient(host, port, timeout_ * 1e-3,
-					connect_timeout * 1e-3, false, 0)));
+					connect_timeout * 1e-3, dir, false, 0)));
 }
 
 WritableDatabase
 Remote::open_writable(const string &host, unsigned int port,
 		      useconds_t timeout_, useconds_t connect_timeout,
-		      int flags)
+		      const string &dir, int flags)
 {
-    LOGCALL_STATIC(API, WritableDatabase, "Remote::open_writable", host | port | timeout_ | connect_timeout | flags);
+    LOGCALL_STATIC(API, WritableDatabase, "Remote::open_writable", host | port | timeout_ | connect_timeout | dir | flags);
     RETURN(WritableDatabase(new RemoteTcpClient(host, port, timeout_ * 1e-3,
-						connect_timeout * 1e-3, true,
+						connect_timeout * 1e-3, dir, true,
 						flags)));
 }
 
 Database
 Remote::open(const string &program, const string &args,
-	     useconds_t timeout_)
+	     useconds_t timeout_, const string &dir)
 {
-    LOGCALL_STATIC(API, Database, "Remote::open", program | args | timeout_);
-    RETURN(Database(new ProgClient(program, args, timeout_ * 1e-3, false, 0)));
+    LOGCALL_STATIC(API, Database, "Remote::open", program | args | timeout_ | dir);
+    RETURN(Database(new ProgClient(program, args, timeout_ * 1e-3, dir, false, 0)));
 }
 
 WritableDatabase
 Remote::open_writable(const string &program, const string &args,
-		      useconds_t timeout_, int flags)
+		      useconds_t timeout_, const string &dir, int flags)
 {
-    LOGCALL_STATIC(API, WritableDatabase, "Remote::open_writable", program | args | timeout_ | flags);
+    LOGCALL_STATIC(API, WritableDatabase, "Remote::open_writable", program | args | timeout_ | dir | flags);
     RETURN(WritableDatabase(new ProgClient(program, args,
-					   timeout_ * 1e-3, true, flags)));
+					   timeout_ * 1e-3, dir, true, flags)));
 }
 
 }
