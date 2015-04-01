@@ -34,6 +34,9 @@
 
 /** Remote backend server base class. */
 class XAPIAN_VISIBILITY_DEFAULT RemoteServer : private RemoteConnection {
+    void *matchstate;
+    message_type required_type;
+
     /// Don't allow assignment.
     void operator=(const RemoteServer &);
 
@@ -174,6 +177,10 @@ class XAPIAN_VISIBILITY_DEFAULT RemoteServer : private RemoteConnection {
 
     // select the active database
     void msg_select(const std::string & message);
+
+    void msg_getmset(const std::string & message);
+
+    void msg_shutdown(const std::string & message);
 
     void select_db(const std::vector<std::string> &dbpaths_, bool writable_, int flags);
 
