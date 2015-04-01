@@ -23,6 +23,7 @@ lib_src +=\
 	net/progclient.cc\
 	net/remoteconnection.cc\
 	net/remoteserver.cc\
+	net/remoteprotocol.cc\
 	net/remotetcpclient.cc\
 	net/remotetcpserver.cc\
 	net/replicatetcpclient.cc\
