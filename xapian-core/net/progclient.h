@@ -87,6 +87,7 @@ class ProgClient : public RemoteDatabase {
     ProgClient(const std::string &progname,
 	       const std::string &arg,
 	       double msecs_timeout,
+	   const std::string & dir,
 	       bool writable,
 	       int flags);
 

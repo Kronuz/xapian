@@ -49,6 +49,10 @@ class RemoteDatabase : public Xapian::Database::Internal {
     /// Don't allow copying.
     RemoteDatabase(const RemoteDatabase &);
 
+    /** Directory to store databases in.
+     */
+    std::string db_dir;
+
     /// The object which does the I/O.
     mutable RemoteConnection link;
 
@@ -106,7 +110,7 @@ class RemoteDatabase : public Xapian::Database::Internal {
      *	@param flags	Xapian::DB_RETRY_LOCK or 0.
      */
     RemoteDatabase(int fd, double timeout_, const string & context_,
-		   bool writable, int flags);
+		   const string & dir, bool writable, int flags);
 
     /// Receive a message from the server.
     reply_type get_message(string & message, reply_type required_type = REPLY_MAX) const;

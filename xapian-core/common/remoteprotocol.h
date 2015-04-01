@@ -89,6 +89,7 @@ enum message_type {
     MSG_METADATAKEYLIST,	// Iterator for metadata keys
     MSG_FREQS,			// Get termfreq and collfreq
     MSG_UNIQUETERMS,		// Get number of unique terms in doc
+    MSG_SELECT,			// Select current database
     MSG_MAX
 };
 
