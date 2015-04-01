@@ -32,61 +32,29 @@
 
 #include <string>
 
-/** Remote backend server base class. */
-class XAPIAN_VISIBILITY_DEFAULT RemoteServer : private RemoteConnection {
+
+class XAPIAN_VISIBILITY_DEFAULT RemoteProtocol {
     void *matchstate;
     message_type required_type;
 
-    /// Don't allow assignment.
-    void operator=(const RemoteServer &);
-
-    /// Don't allow copying.
-    RemoteServer(const RemoteServer &);
-
-    /** The database we're using.
-     *
-     *  If we're writable, this is the same as wdb.
-     */
-    Xapian::Database * db;
-
-    /// The WritableDatabase we're using, or NULL if we're read-only.
-    Xapian::WritableDatabase * wdb;
-
-    /// Do we support writing?
-    bool writable;
-
-    /** Timeout for actions during a conversation.
-     *
-     *  The timeout is specified in seconds.  If the timeout is exceeded then a
-     *  Xapian::NetworkTimeoutError is thrown.
-     */
-    double active_timeout;
-
-    /** Timeout while waiting for a new action from the client.
-     *
-     *  The timeout is specified in seconds.  If the timeout is exceeded then a
-     *  Xapian::NetworkTimeoutError is thrown.
-     */
-    double idle_timeout;
-
-    /// The registry, which allows unserialisation of user subclasses.
-    Xapian::Registry reg;
-
-    std::vector<std::string> dbpaths;
-
+  protected:
     /// Accept a message from the client.
-    message_type get_message(double timeout, std::string & result,
-			     message_type required_type = MSG_MAX);
+    virtual message_type get_message(double timeout, std::string & result,
+                                     message_type required_type = MSG_MAX) = 0;
 
     /// Send a message to the client.
-    void send_message(reply_type type, const std::string &message);
+    virtual void send_message(reply_type type, const std::string &message) = 0;
 
     /// Send a message to the client, with specific end_time.
-    void send_message(reply_type type, const std::string &message,
-		      double end_time) {
-	unsigned char type_as_char = static_cast<unsigned char>(type);
-	RemoteConnection::send_message(type_as_char, message, end_time);
-    }
+    virtual void send_message(reply_type type, const std::string &message,
+                              double end_time) = 0;
+
+    virtual Xapian::Database * get_db(bool) = 0;
+    virtual void release_db(Xapian::Database *) = 0;
+    virtual void select_db(const std::vector<std::string> &, bool, int) = 0;
+    virtual void shutdown() {};
+
+    void cleanup();
 
     // all terms
     void msg_allterms(const std::string & message);
@@ -182,9 +150,71 @@ class XAPIAN_VISIBILITY_DEFAULT RemoteServer : private RemoteConnection {
 
     void msg_shutdown(const std::string & message);
 
-    void select_db(const std::vector<std::string> &dbpaths_, bool writable_, int flags);
-
     void run_one();
+
+  public:
+    /// The registry, which allows unserialisation of user subclasses.
+    Xapian::Registry reg;
+
+    std::vector<std::string> dbpaths;
+
+    /// Do we support writing?
+    bool writable;
+
+    /** Timeout for actions during a conversation.
+     *
+     *  The timeout is specified in seconds.  If the timeout is exceeded then a
+     *  Xapian::NetworkTimeoutError is thrown.
+     */
+    double active_timeout;
+
+    /** Timeout while waiting for a new action from the client.
+     *
+     *  The timeout is specified in seconds.  If the timeout is exceeded then a
+     *  Xapian::NetworkTimeoutError is thrown.
+     */
+    double idle_timeout;
+
+    RemoteProtocol(const std::vector<std::string> &dbpaths,
+                 double active_timeout_,
+                 double idle_timeout_,
+                 bool writable = false);
+
+    virtual ~RemoteProtocol();
+};
+
+
+/** Remote backend server base class. */
+class XAPIAN_VISIBILITY_DEFAULT RemoteServer : private RemoteConnection, public RemoteProtocol {
+    /// Don't allow assignment.
+    void operator=(const RemoteServer &);
+
+    /// Don't allow copying.
+    RemoteServer(const RemoteServer &);
+
+    /** The database we're using.
+     *
+     *  If we're writable, this is the same as wdb.
+     */
+    Xapian::Database * db;
+
+    /// The WritableDatabase we're using, or NULL if we're read-only.
+    Xapian::WritableDatabase * wdb;
+
+    /// Accept a message from the client.
+    message_type get_message(double timeout, std::string & result,
+			     message_type required_type = MSG_MAX);
+
+    /// Send a message to the client.
+    void send_message(reply_type type, const std::string &message);
+
+    /// Send a message to the client, with specific end_time.
+    void send_message(reply_type type, const std::string &message,
+                      double end_time);
+
+    Xapian::Database * get_db(bool writable_);
+    void release_db(Xapian::Database *) {};
+    void select_db(const std::vector<std::string> &dbpaths_, bool writable_, int flags);
 
   public:
     /** Construct a RemoteServer.
