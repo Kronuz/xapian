@@ -54,10 +54,17 @@ throw_read_only()
     throw Xapian::InvalidOperationError("Server is read-only");
 }
 
+XAPIAN_NORETURN(static void throw_no_db());
+static void
+throw_no_db()
+{
+    throw Xapian::InvalidOperationError("Server has no open database");
+}
+
 /// Class to throw when we receive the connection closing message.
 struct ConnectionClosed { };
 
-RemoteServer::RemoteServer(const std::vector<std::string> &dbpaths,
+RemoteServer::RemoteServer(const std::vector<std::string> &dbpaths_,
 			   int fdin_, int fdout_,
 			   double active_timeout_, double idle_timeout_,
 			   bool writable_)
@@ -67,26 +74,11 @@ RemoteServer::RemoteServer(const std::vector<std::string> &dbpaths,
 {
     // Catch errors opening the database and propagate them to the client.
     try {
-	Assert(!dbpaths.empty());
+	Assert(!dbpaths_.empty());
 	// We always open the database read-only to start with.  If we're
 	// writable, the client can ask to be upgraded to write access once
 	// connected if it wants it.
-	db = new Xapian::Database(dbpaths[0]);
-	// Build a better description than Database::get_description() gives
-	// in the variable context.  FIXME: improve Database::get_description()
-	// and then just use that instead.
-	context = dbpaths[0];
-
-	if (!writable) {
-	    vector<std::string>::const_iterator i(dbpaths.begin());
-	    for (++i; i != dbpaths.end(); ++i) {
-		db->add_database(Xapian::Database(*i));
-		context += ' ';
-		context += *i;
-	    }
-	} else {
-	    AssertEq(dbpaths.size(), 1); // Expecting exactly one database.
-	}
+	select_db(dbpaths_, false, Xapian::DB_OPEN);
     } catch (const Xapian::Error &err) {
 	// Propagate the exception to the client.
 	send_message(REPLY_EXCEPTION, serialise_error(err));
@@ -192,6 +184,7 @@ RemoteServer::run()
 		&RemoteServer::msg_openmetadatakeylist,
 		&RemoteServer::msg_freqs,
 		&RemoteServer::msg_uniqueterms,
+		&RemoteServer::msg_select,
 	    };
 
 	    string message;
@@ -239,6 +232,9 @@ RemoteServer::run()
 void
 RemoteServer::msg_allterms(const string &message)
 {
+    if (!db)
+	throw_no_db();
+
     string prev = message;
     string reply;
 
@@ -262,6 +258,9 @@ RemoteServer::msg_allterms(const string &message)
 void
 RemoteServer::msg_termlist(const string &message)
 {
+    if (!db)
+	throw_no_db();
+
     const char *p = message.data();
     const char *p_end = p + message.size();
     Xapian::docid did;
@@ -289,6 +288,9 @@ RemoteServer::msg_termlist(const string &message)
 void
 RemoteServer::msg_positionlist(const string &message)
 {
+    if (!db)
+	throw_no_db();
+
     const char *p = message.data();
     const char *p_end = p + message.size();
     Xapian::docid did;
@@ -308,8 +310,32 @@ RemoteServer::msg_positionlist(const string &message)
 }
 
 void
+RemoteServer::msg_select(const string &message)
+{
+    const char *p = message.c_str();
+    const char *p_end = p + message.size();
+
+    std::vector<string> dbpaths_;
+
+    while (p != p_end) {
+	size_t len = decode_length(&p, p_end, true);
+	string dbpath(p, len);
+	dbpaths_.push_back(dbpath);
+	p += len;
+    }
+
+    select_db(dbpaths_, false, Xapian::DB_OPEN);
+
+    msg_update(message);
+}
+
+
+void
 RemoteServer::msg_postlist(const string &message)
 {
+    if (!db)
+	throw_no_db();
+
     const string & term = message;
 
     Xapian::doccount termfreq = db->get_termfreq(term);
@@ -350,15 +376,17 @@ RemoteServer::msg_writeaccess(const string & msg)
 	}
     }
 
-    wdb = new Xapian::WritableDatabase(context, flags);
-    delete db;
-    db = wdb;
+    select_db(dbpaths, true, flags);
+
     msg_update(msg);
 }
 
 void
 RemoteServer::msg_reopen(const string & msg)
 {
+    if (!db)
+	throw_no_db();
+
     if (!db->reopen()) {
 	send_message(REPLY_DONE, string());
 	return;
@@ -373,20 +401,25 @@ RemoteServer::msg_update(const string &)
 	char(XAPIAN_REMOTE_PROTOCOL_MAJOR_VERSION),
 	char(XAPIAN_REMOTE_PROTOCOL_MINOR_VERSION)
     };
+
     string message(protocol, 2);
-    Xapian::doccount num_docs = db->get_doccount();
-    message += encode_length(num_docs);
-    message += encode_length(db->get_lastdocid() - num_docs);
-    Xapian::termcount doclen_lb = db->get_doclength_lower_bound();
-    message += encode_length(doclen_lb);
-    message += encode_length(db->get_doclength_upper_bound() - doclen_lb);
-    message += (db->has_positions() ? '1' : '0');
-    // FIXME: clumsy to reverse calculate total_len like this:
-    totlen_t total_len = totlen_t(db->get_avlength() * db->get_doccount() + .5);
-    message += encode_length(total_len);
-    //message += encode_length(db->get_total_length());
-    string uuid = db->get_uuid();
-    message += uuid;
+
+    if (db) {
+	Xapian::doccount num_docs = db->get_doccount();
+	message += encode_length(num_docs);
+	message += encode_length(db->get_lastdocid() - num_docs);
+	Xapian::termcount doclen_lb = db->get_doclength_lower_bound();
+	message += encode_length(doclen_lb);
+	message += encode_length(db->get_doclength_upper_bound() - doclen_lb);
+	message += (db->has_positions() ? '1' : '0');
+	// FIXME: clumsy to reverse calculate total_len like this:
+	totlen_t total_len = totlen_t(db->get_avlength() * db->get_doccount() + .5);
+	message += encode_length(total_len);
+	//message += encode_length(db->get_total_length());
+	string uuid = db->get_uuid();
+	message += uuid;
+    }
+
     send_message(REPLY_UPDATE, message);
 }
 
@@ -485,6 +518,9 @@ RemoteServer::msg_query(const string &message_in)
 	p += len;
     }
 
+    if (!db)
+	throw_no_db();
+
     Xapian::Weight::Internal local_stats;
     MultiMatch match(*db, query, qlen, &rset, collapse_max, collapse_key,
 		     percent_cutoff, weight_cutoff, order,
@@ -528,6 +564,9 @@ RemoteServer::msg_query(const string &message_in)
 void
 RemoteServer::msg_document(const string &message)
 {
+    if (!db)
+	throw_no_db();
+
     const char *p = message.data();
     const char *p_end = p + message.size();
     Xapian::docid did;
@@ -549,6 +588,9 @@ RemoteServer::msg_document(const string &message)
 void
 RemoteServer::msg_keepalive(const string &)
 {
+    if (!db)
+	throw_no_db();
+
     // Ensure *our* database stays alive, as it may contain remote databases!
     db->keep_alive();
     send_message(REPLY_DONE, string());
@@ -557,24 +599,36 @@ RemoteServer::msg_keepalive(const string &)
 void
 RemoteServer::msg_termexists(const string &term)
 {
+    if (!db)
+	throw_no_db();
+
     send_message((db->term_exists(term) ? REPLY_TERMEXISTS : REPLY_TERMDOESNTEXIST), string());
 }
 
 void
 RemoteServer::msg_collfreq(const string &term)
 {
+    if (!db)
+	throw_no_db();
+
     send_message(REPLY_COLLFREQ, encode_length(db->get_collection_freq(term)));
 }
 
 void
 RemoteServer::msg_termfreq(const string &term)
 {
+    if (!db)
+	throw_no_db();
+
     send_message(REPLY_TERMFREQ, encode_length(db->get_termfreq(term)));
 }
 
 void
 RemoteServer::msg_freqs(const string &term)
 {
+    if (!db)
+	throw_no_db();
+
     string msg = encode_length(db->get_termfreq(term));
     msg += encode_length(db->get_collection_freq(term));
     send_message(REPLY_FREQS, msg);
@@ -583,6 +637,9 @@ RemoteServer::msg_freqs(const string &term)
 void
 RemoteServer::msg_valuestats(const string & message)
 {
+    if (!db)
+	throw_no_db();
+
     const char *p = message.data();
     const char *p_end = p + message.size();
     while (p != p_end) {
@@ -604,6 +661,9 @@ RemoteServer::msg_valuestats(const string & message)
 void
 RemoteServer::msg_doclength(const string &message)
 {
+    if (!db)
+	throw_no_db();
+
     const char *p = message.data();
     const char *p_end = p + message.size();
     Xapian::docid did;
@@ -614,6 +674,9 @@ RemoteServer::msg_doclength(const string &message)
 void
 RemoteServer::msg_uniqueterms(const string &message)
 {
+    if (!db)
+	throw_no_db();
+
     const char *p = message.data();
     const char *p_end = p + message.size();
     Xapian::docid did;
@@ -715,12 +778,18 @@ RemoteServer::msg_replacedocumentterm(const string & message)
 void
 RemoteServer::msg_getmetadata(const string & message)
 {
+    if (!db)
+	throw_no_db();
+
     send_message(REPLY_METADATA, db->get_metadata(message));
 }
 
 void
 RemoteServer::msg_openmetadatakeylist(const string & message)
 {
+    if (!db)
+	throw_no_db();
+
     string prev = message;
     string reply;
 
@@ -777,4 +846,33 @@ RemoteServer::msg_removespelling(const string & message)
     Xapian::termcount freqdec;
     decode_length(&p, p_end, freqdec);
     wdb->remove_spelling(string(p, p_end - p), freqdec);
+}
+
+void
+RemoteServer::select_db(const std::vector<std::string> &dbpaths_, bool writable_, int flags) {
+    if (writable_) {
+    	wdb = new Xapian::WritableDatabase(dbpaths_[0], flags);
+    	delete db;
+    	db = wdb;
+    } else {
+	wdb = NULL;
+	Xapian::Database * db_ = new Xapian::Database(dbpaths_[0], flags);
+	delete db;
+	db = db_;
+	// Build a better description than Database::get_description() gives
+	// in the variable context.  FIXME: improve Database::get_description()
+	// and then just use that instead.
+	context = dbpaths_[0];
+	if (!writable) {
+	    vector<std::string>::const_iterator i(dbpaths_.begin());
+	    for (++i; i != dbpaths_.end(); ++i) {
+		db->add_database(Xapian::Database(*i));
+		context += ' ';
+		context += *i;
+	    }
+	} else {
+	    AssertEq(dbpaths_.size(), 1); // Expecting exactly one database.
+	}
+    }
+    dbpaths = dbpaths_;
 }

@@ -68,9 +68,10 @@ throw_connection_closed_unexpectedly()
 }
 
 RemoteDatabase::RemoteDatabase(int fd, double timeout_,
-			       const string & context_, bool writable,
-			       int flags)
-	: link(fd, fd, context_),
+			       const string & context_, const string & dir,
+			       bool writable, int flags)
+	: db_dir(dir),
+      link(fd, fd, context_),
 	  context(context_),
 	  cached_stats_valid(),
 	  mru_valstats(),
@@ -339,7 +340,7 @@ RemoteDatabase::update_stats(message_type msg_code, const string & body) const
 
     string message;
     reply_type type = get_message(message);
-    if (type != REPLY_UPDATE || message.size() < 3) {
+    if (type != REPLY_UPDATE || message.size() < 2) {
 	if (type == REPLY_DONE) {
 	    // The database was already open at the latest revision.
 	    return false;
@@ -371,6 +372,22 @@ RemoteDatabase::update_stats(message_type msg_code, const string & body) const
 	    "."
 	    STRINGIZE(XAPIAN_REMOTE_PROTOCOL_MINOR_VERSION);
 	throw Xapian::NetworkError(errmsg, context);
+    }
+
+    if (p == p_end) {
+        message.assign(encode_length(db_dir.size()));
+        message += db_dir;
+	send_message(MSG_SELECT, message);
+	get_message(message, REPLY_UPDATE);
+        if (message.size() < 3) {
+            throw Xapian::NetworkError("Database was not selected", context);
+        }
+
+	p = message.c_str();
+	p_end = p + message.size();
+
+	// The protocol versions where already checked.
+	p += 2;
     }
 
     decode_length(&p, p_end, doccount);

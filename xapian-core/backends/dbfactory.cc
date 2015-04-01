@@ -273,13 +273,13 @@ open_stub(WritableDatabase &db, const string &file, int flags)
 		} else {
 		    line.erase(0, 1);
 		}
-		db.add_database(Remote::open_writable(line, args, 0, flags));
+		db.add_database(Remote::open_writable(line, args, 0, file, flags));
 	    } else if (colon != string::npos) {
 		// tcp
 		// FIXME: timeouts
 		unsigned int port = atoi(line.c_str() + colon + 1);
 		line.erase(colon);
-		db.add_database(Remote::open_writable(line, port, 0, 10000, flags));
+		db.add_database(Remote::open_writable(line, port, 0, 10000, file, flags));
 	    }
 	    continue;
 	}
