@@ -22,6 +22,14 @@
 #ifndef XAPIAN_INCLUDED_REMOTEPROTOCOL_H
 #define XAPIAN_INCLUDED_REMOTEPROTOCOL_H
 
+#include "xapian/database.h"
+#include "xapian/visibility.h"
+#include "xapian/registry.h"
+
+#include <vector>
+#include <string>
+
+
 // Versions:
 // 21: Overhauled remote backend supporting WritableDatabase
 // 22: Lossless double serialisation
@@ -119,6 +127,161 @@ enum reply_type {
     REPLY_FREQS,		// Get termfreq and collfreq
     REPLY_UNIQUETERMS,		// Get number of unique terms in doc
     REPLY_MAX
+};
+
+
+/// Class to throw when we receive the connection closing message.
+struct ConnectionClosed { };
+
+
+class XAPIAN_VISIBILITY_DEFAULT RemoteProtocol {
+    void *matchstate;
+    message_type required_type;
+
+  protected:
+    /// Accept a message from the client.
+    virtual message_type get_message(double timeout, std::string & result,
+				     message_type required_type = MSG_MAX) = 0;
+
+    /// Send a message to the client.
+    virtual void send_message(reply_type type, const std::string &message) = 0;
+
+    /// Send a message to the client, with specific end_time.
+    virtual void send_message(reply_type type, const std::string &message,
+			      double end_time) = 0;
+
+    virtual Xapian::Database * get_db(bool) = 0;
+    virtual void release_db(Xapian::Database *) = 0;
+    virtual void select_db(const std::vector<std::string> &, bool, int) = 0;
+    virtual void shutdown() {};
+
+    void cleanup();
+
+    // all terms
+    void msg_allterms(const std::string & message);
+
+    // get document
+    void msg_document(const std::string & message);
+
+    // term exists?
+    void msg_termexists(const std::string & message);
+
+    // get collection freq
+    void msg_collfreq(const std::string & message);
+
+    // get termfreq
+    void msg_termfreq(const std::string & message);
+
+    // get termfreq and collection freq
+    void msg_freqs(const std::string & message);
+
+    // get value statistics
+    void msg_valuestats(const std::string & message);
+
+    // keep alive
+    void msg_keepalive(const std::string & message);
+
+    // get doclength
+    void msg_doclength(const std::string & message);
+
+    // set the query; return the mset
+    void msg_query(const std::string & message);
+
+    // get termlist
+    void msg_termlist(const std::string & message);
+
+    // get postlist
+    void msg_postlist(const std::string & message);
+
+    // get positionlist
+    void msg_positionlist(const std::string &message);
+
+    // get write access
+    void msg_writeaccess(const std::string & message);
+
+    // reopen
+    void msg_reopen(const std::string & message);
+
+    // get updated doccount and avlength
+    void msg_update(const std::string &message);
+
+    // commit
+    void msg_commit(const std::string & message);
+
+    // cancel
+    void msg_cancel(const std::string &message);
+
+    // add document
+    void msg_adddocument(const std::string & message);
+
+    // delete document
+    void msg_deletedocument(const std::string & message);
+
+    // delete document with unique term
+    void msg_deletedocumentterm(const std::string & message);
+
+    // replace document
+    void msg_replacedocument(const std::string & message);
+
+    // replace document with unique term
+    void msg_replacedocumentterm(const std::string & message);
+
+    // get metadata
+    void msg_getmetadata(const std::string & message);
+
+    // read metadata key list
+    void msg_openmetadatakeylist(const std::string & message);
+
+    // set metadata
+    void msg_setmetadata(const std::string & message);
+
+    // add a spelling
+    void msg_addspelling(const std::string & message);
+
+    // remove a spelling
+    void msg_removespelling(const std::string & message);
+
+    // get number of unique terms
+    void msg_uniqueterms(const std::string & message);
+
+    // select the active database
+    void msg_select(const std::string & message);
+
+    void msg_getmset(const std::string & message);
+
+    void msg_shutdown(const std::string & message);
+
+    void run_one();
+
+  public:
+    /// The registry, which allows unserialisation of user subclasses.
+    Xapian::Registry reg;
+
+    std::vector<std::string> dbpaths;
+
+    /// Do we support writing?
+    bool writable;
+
+    /** Timeout for actions during a conversation.
+     *
+     *  The timeout is specified in seconds.  If the timeout is exceeded then a
+     *  Xapian::NetworkTimeoutError is thrown.
+     */
+    double active_timeout;
+
+    /** Timeout while waiting for a new action from the client.
+     *
+     *  The timeout is specified in seconds.  If the timeout is exceeded then a
+     *  Xapian::NetworkTimeoutError is thrown.
+     */
+    double idle_timeout;
+
+    RemoteProtocol(const std::vector<std::string> &dbpaths,
+		 double active_timeout_,
+		 double idle_timeout_,
+		 bool writable = false);
+
+    virtual ~RemoteProtocol();
 };
 
 #endif // XAPIAN_INCLUDED_REMOTEPROTOCOL_H
