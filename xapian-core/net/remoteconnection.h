@@ -23,7 +23,7 @@
 
 #include <string>
 
-#include "remoteprotocol.h"
+#include "xapian/remoteprotocol.h"
 #include "safeerrno.h"
 #include "safenetdb.h" // For EAI_* constants.
 #include "safeunistd.h"

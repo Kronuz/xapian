@@ -103,6 +103,9 @@
 // Mechanism for accessing a struct of constant information
 #include <xapian/constinfo.h>
 
+// Remote protocol
+#include <xapian/remoteprotocol.h>
+
 /// The Xapian namespace contains public interfaces for the Xapian library.
 namespace Xapian {
 
