@@ -512,6 +512,13 @@ class Database::Internal : public Xapian::Internal::intrusive_base {
 	 */
 	virtual void invalidate_doc_object(Xapian::Document::Internal * obj) const;
 
+	/** Read a set of changesets from a file descriptor and apply them.
+	 *
+	 *  This call may reopen the database, leaving it pointing to a more
+	 *  recent version of the database.
+	 */
+	virtual void apply_changeset_from_fd(int fd, double end_time);
+
 	//////////////////////////////////////////////////////////////////
 	// Introspection methods:
 	// ======================

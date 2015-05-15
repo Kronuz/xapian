@@ -440,6 +440,8 @@ class XAPIAN_VISIBILITY_DEFAULT Database {
 	    return Xapian::TermIterator();
 	}
 
+	std::string get_revision_info() const;
+
 	/** Get a UUID for the database.
 	 *
 	 *  The UUID will persist for the lifetime of the database.
@@ -468,6 +470,8 @@ class XAPIAN_VISIBILITY_DEFAULT Database {
 	 */
 	static size_t check(const std::string & path, int opts = 0,
 			    std::ostream *out = NULL);
+
+	void write_changesets_to_fd(int fd, const std::string & start_revision, bool need_whole_db);
 };
 
 /** This class provides read/write access to a database.
@@ -937,6 +941,8 @@ class XAPIAN_VISIBILITY_DEFAULT WritableDatabase : public Database {
 
 	/// Return a string describing this object.
 	std::string get_description() const;
+
+	void apply_changeset_from_fd(int fd);
 };
 
 }

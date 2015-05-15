@@ -1694,3 +1694,233 @@ ChertWritableDatabase::invalidate_doc_object(Xapian::Document::Internal * obj) c
 	modify_shortcut_docid = 0;
     }
 }
+
+void
+ChertWritableDatabase::process_changeset_chunk_base(const string & tablename,
+                                                    string & buf,
+                                                    RemoteConnection & conn,
+                                                    double end_time,
+                                                    int changes_fd) const
+{
+    const char *ptr = buf.data();
+    const char *end = ptr + buf.size();
+
+    // Get the letter
+    char letter = ptr[0];
+    if (letter != 'A' && letter != 'B')
+        throw NetworkError("Invalid base file letter in changeset");
+    ++ptr;
+
+
+    // Get the base size
+    if (ptr == end)
+        throw NetworkError("Unexpected end of changeset (5)");
+    string::size_type base_size;
+    if (!unpack_uint(&ptr, end, &base_size))
+        throw NetworkError("Invalid base file size in changeset");
+
+    // Get the new base file into buf.
+    buf.erase(0, ptr - buf.data());
+    if (!conn.get_message_chunk(buf, base_size, end_time))
+        throw NetworkError("Unexpected end of changeset (6)");
+
+    // Write base_size bytes from start of buf to base file for tablename
+    string tmp_path = db_dir + "/" + tablename + "tmp";
+    string base_path = db_dir + "/" + tablename + ".base" + letter;
+    int fd = posixy_open(tmp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
+    if (fd == -1) {
+        string msg = "Failed to open ";
+        msg += tmp_path;
+        throw DatabaseError(msg, errno);
+    }
+    {
+        FD closer(fd);
+
+        io_write(fd, buf.data(), base_size);
+        io_sync(fd);
+    }
+
+    buf.erase(0, base_size);
+
+    // Move the base file into place.
+    if (posixy_rename(tmp_path.c_str(), base_path.c_str()) < 0) {
+        // With NFS, rename() failing may just mean that the server crashed
+        // after successfully renaming, but before reporting this, and then
+        // the retried operation fails.  So we need to check if the source
+        // file still exists, which we do by calling unlink(), since we want
+        // to remove the temporary file anyway.
+        int saved_errno = errno;
+        if (unlink(tmp_path.c_str()) == 0 || errno != ENOENT) {
+            string msg("Couldn't update base file ");
+            msg += tablename;
+            msg += ".base";
+            msg += letter;
+            throw DatabaseError(msg, saved_errno);
+        }
+    }
+}
+
+void
+ChertWritableDatabase::process_changeset_chunk_blocks(const string & tablename,
+                                                      string & buf,
+                                                      RemoteConnection & conn,
+                                                      double end_time,
+                                                      int changes_fd) const
+{
+    const char *ptr = buf.data();
+    const char *end = ptr + buf.size();
+
+    unsigned int changeset_blocksize;
+    if (!unpack_uint(&ptr, end, &changeset_blocksize))
+        throw NetworkError("Invalid blocksize in changeset");
+
+    buf.erase(0, ptr - buf.data());
+
+    string db_path = db_dir + "/" + tablename + ".DB";
+    int fd = posixy_open(db_path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
+    if (fd == -1) {
+	string msg = "Failed to open ";
+	msg += db_path;
+	throw DatabaseError(msg, errno);
+    }
+    {
+	FD closer(fd);
+
+	while (true) {
+	    conn.get_message_chunk(buf, REASONABLE_CHANGESET_SIZE, end_time);
+	    ptr = buf.data();
+	    end = ptr + buf.size();
+
+	    uint4 block_number;
+	    if (!unpack_uint(&ptr, end, &block_number))
+		throw NetworkError("Invalid block number in changeset");
+	buf.erase(0, ptr - buf.data());
+	    if (block_number == 0)
+		break;
+	    --block_number;
+
+	    if (!conn.get_message_chunk(buf, changeset_blocksize, end_time))
+		throw NetworkError("Incomplete block in changeset");
+
+	    io_write_block(fd, buf.data(), changeset_blocksize, block_number);
+
+	    buf.erase(0, changeset_blocksize);
+	}
+	io_sync(fd);
+    }
+}
+
+void
+ChertWritableDatabase::apply_changeset_from_fd(int fd, double end_time)
+{
+    LOGCALL_VOID(DB, "ChertWritableDatabase::apply_changeset_from_fd", fd | end_time);
+
+    RemoteConnection conn(-1, fd, string());
+
+    string buf;
+    // Read enough to be certain that we've got the header part of the
+    // changeset.
+
+    conn.get_message_chunk(buf, REASONABLE_CHANGESET_SIZE, end_time);
+    // Check the magic string.
+    if (!startswith(buf, CHANGES_MAGIC_STRING)) {
+        throw NetworkError("Invalid ChangeSet magic string");
+    }
+
+    const char *ptr = buf.data();
+    const char *end = ptr + buf.size();
+    ptr += CONST_STRLEN(CHANGES_MAGIC_STRING);
+
+    unsigned int changes_version;
+    if (!unpack_uint(&ptr, end, &changes_version))
+        throw NetworkError("Couldn't read a valid version number from changeset");
+    if (changes_version != CHANGES_VERSION)
+        throw NetworkError("Unsupported changeset version");
+
+    chert_revision_number_t startrev;
+    chert_revision_number_t endrev;
+
+    if (!unpack_uint(&ptr, end, &startrev))
+        throw NetworkError("Couldn't read a valid start revision from changeset");
+    if (!unpack_uint(&ptr, end, &endrev))
+        throw NetworkError("Couldn't read a valid end revision from changeset");
+
+    if (endrev <= startrev)
+        throw NetworkError("End revision in changeset is not later than start revision");
+
+    if (ptr == end)
+        throw NetworkError("Unexpected end of changeset (1)");
+
+    FD changes_fd;
+    string changes_name;
+    if (max_changesets > 0) {
+        changes_fd = create_changeset_file(db_dir, "changes" + str(startrev),
+                                           changes_name);
+    }
+
+    // Check the revision number.
+    if (startrev != record_table.get_open_revision_number())
+        throw NetworkError("Changeset supplied is for wrong revision number");
+
+    unsigned char changes_type = ptr[0];
+    if (changes_type != 0) {
+        throw NetworkError("Unsupported changeset type: " + str(changes_type));
+        // FIXME - support changes of type 1, produced when DANGEROUS mode is
+        // on.
+    }
+
+    // Clear the bits of the buffer which have been read.
+    buf.erase(0, ptr - buf.data());
+
+    // Read the items from the changeset.
+    while (true) {
+        conn.get_message_chunk(buf, REASONABLE_CHANGESET_SIZE, end_time);
+        ptr = buf.data();
+        end = ptr + buf.size();
+
+        // Read the type of the next chunk of data
+        if (ptr == end)
+            throw NetworkError("Unexpected end of changeset (2)");
+        unsigned char chunk_type = ptr[0];
+        ++ptr;
+        if (chunk_type == 0)
+            break;
+
+        // Get the tablename.
+        string tablename;
+        if (!unpack_string(&ptr, end, tablename))
+            throw NetworkError("Unexpected end of changeset (3)");
+        if (tablename.empty())
+            throw NetworkError("Missing tablename in changeset");
+        if (tablename.find_first_not_of("abcdefghijklmnopqrstuvwxyz") !=
+            tablename.npos)
+            throw NetworkError("Invalid character in tablename in changeset");
+
+        // Process the chunk
+        if (ptr == end)
+            throw NetworkError("Unexpected end of changeset (4)");
+        buf.erase(0, ptr - buf.data());
+
+        switch (chunk_type) {
+            case 1:
+                process_changeset_chunk_base(tablename, buf, conn, end_time,
+                                             changes_fd);
+                break;
+            case 2:
+                process_changeset_chunk_blocks(tablename, buf, conn, end_time,
+                                               changes_fd);
+                break;
+            default:
+                throw NetworkError("Unrecognised item type in changeset");
+        }
+    }
+    chert_revision_number_t reqrev;
+    if (!unpack_uint(&ptr, end, &reqrev))
+        throw NetworkError("Couldn't read a valid required revision from changeset");
+    if (reqrev < endrev)
+        throw NetworkError("Required revision in changeset is earlier than end revision");
+    if (ptr != end)
+        throw NetworkError("Junk found at end of changeset");
+
+    buf.resize(0);
+}

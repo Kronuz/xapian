@@ -88,6 +88,14 @@ using Xapian::Internal::intrusive_ptr;
 // byte in the term).
 #define MAX_SAFE_TERM_LENGTH 245
 
+static const char * dbnames =
+	"/postlist." GLASS_TABLE_EXTENSION "\0"
+	"/docdata." GLASS_TABLE_EXTENSION "\0\0"
+	"/termlist." GLASS_TABLE_EXTENSION "\0"
+	"/position." GLASS_TABLE_EXTENSION "\0"
+	"/spelling." GLASS_TABLE_EXTENSION "\0"
+	"/synonym." GLASS_TABLE_EXTENSION;
+
 /* This opens the tables, determining the current and next revision numbers,
  * and stores handles to the tables.
  */
@@ -1542,5 +1550,206 @@ GlassWritableDatabase::invalidate_doc_object(Xapian::Document::Internal * obj) c
     if (obj == modify_shortcut_document) {
 	modify_shortcut_document = NULL;
 	modify_shortcut_docid = 0;
+    }
+}
+
+void
+GlassWritableDatabase::process_changeset_chunk_version(string & buf,
+						       RemoteConnection & conn,
+						       double end_time) const
+{
+    const char *ptr = buf.data();
+    const char *end = ptr + buf.size();
+
+    glass_revision_number_t rev;
+    if (!unpack_uint(&ptr, end, &rev))
+	throw NetworkError("Invalid revision in changeset");
+
+    string::size_type size;
+    if (!unpack_uint(&ptr, end, &size))
+	throw NetworkError("Invalid version file size in changeset");
+
+    // Get the new version file into buf.
+    buf.erase(0, ptr - buf.data());
+    if (!conn.get_message_chunk(buf, size, end_time))
+	throw NetworkError("Unexpected end of changeset (6)");
+
+    // Write size bytes from start of buf to new version file.
+    string tmpfile = db_dir;
+    tmpfile += "/v.rtmp";
+    int fd = posixy_open(tmpfile.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
+    if (fd == -1) {
+	string msg = "Failed to open ";
+	msg += tmpfile;
+	throw DatabaseError(msg, errno);
+    }
+    {
+	FD closer(fd);
+	io_write(fd, buf.data(), size);
+	io_sync(fd);
+    }
+    string version_file = db_dir;
+    version_file += "/iamglass";
+    if (posixy_rename(tmpfile.c_str(), version_file.c_str()) < 0) {
+	// With NFS, rename() failing may just mean that the server crashed
+	// after successfully renaming, but before reporting this, and then
+	// the retried operation fails.  So we need to check if the source
+	// file still exists, which we do by calling unlink(), since we want
+	// to remove the temporary file anyway.
+	int saved_errno = errno;
+	if (unlink(tmpfile.c_str()) == 0 || errno != ENOENT) {
+	    string msg("Couldn't create new version file ");
+	    msg += version_file;
+	    throw DatabaseError(msg, saved_errno);
+	}
+    }
+
+    buf.erase(0, size);
+}
+
+void
+GlassWritableDatabase::process_changeset_chunk_blocks(Glass::table_type table,
+						      unsigned v,
+						      string & buf,
+						      RemoteConnection & conn,
+						      double end_time,
+						      int fds[]) const
+{
+    const char *ptr = buf.data();
+    const char *end = ptr + buf.size();
+
+    unsigned int changeset_blocksize = 2048 << v;
+    if (changeset_blocksize > 65536 ||
+	(changeset_blocksize & (changeset_blocksize - 1))) {
+	throw NetworkError("Invalid blocksize in changeset");
+    }
+    uint4 block_number;
+    if (!unpack_uint(&ptr, end, &block_number))
+	throw NetworkError("Invalid block number in changeset");
+
+    buf.erase(0, ptr - buf.data());
+
+    int fd = fds[table];
+    if (fd == -1) {
+	string db_path = db_dir;
+	db_path += dbnames + table * (11 + CONST_STRLEN(GLASS_TABLE_EXTENSION));
+	fd = posixy_open(db_path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
+	if (fd == -1) {
+	    string msg = "Failed to open ";
+	    msg += db_path;
+	    throw DatabaseError(msg, errno);
+	}
+	fds[table] = fd;
+    }
+
+    if (!conn.get_message_chunk(buf, changeset_blocksize, end_time))
+	throw NetworkError("Unexpected end of changeset (4)");
+
+    io_write_block(fd, buf.data(), changeset_blocksize, block_number);
+    buf.erase(0, changeset_blocksize);
+}
+
+void
+GlassWritableDatabase::apply_changeset_from_fd(int fd, double end_time)
+{
+    LOGCALL_VOID(DB, "GlassWritableDatabase::apply_changeset_from_fd", fd | end_time);
+
+    RemoteConnection conn(-1, fd, string());
+
+    string buf;
+    // Read enough to be certain that we've got the header part of the
+    // changeset.
+
+    conn.get_message_chunk(buf, REASONABLE_CHANGESET_SIZE, end_time);
+    const char *ptr = buf.data();
+    const char *end = ptr + buf.size();
+    // Check the magic string.
+    if (!startswith(buf, CHANGES_MAGIC_STRING)) {
+	throw NetworkError("Invalid ChangeSet magic string");
+    }
+    ptr += CONST_STRLEN(CHANGES_MAGIC_STRING);
+    if (ptr == end)
+	throw NetworkError("Couldn't read a valid version number from changeset");
+    unsigned int changes_version = *ptr++;
+    if (changes_version != CHANGES_VERSION)
+	throw NetworkError("Unsupported changeset version");
+
+    glass_revision_number_t startrev;
+    glass_revision_number_t endrev;
+
+    if (!unpack_uint(&ptr, end, &startrev))
+	throw NetworkError("Couldn't read a valid start revision from changeset");
+    if (!unpack_uint(&ptr, end, &endrev))
+	throw NetworkError("Couldn't read a valid end revision from changeset");
+
+    if (endrev <= startrev)
+	throw NetworkError("End revision in changeset is not later than start revision");
+
+    if (ptr == end)
+	throw NetworkError("Unexpected end of changeset (1)");
+
+    // Check the revision number.
+    if (startrev != version_file.get_revision())
+	throw NetworkError("Changeset supplied is for wrong revision number");
+
+    unsigned char changes_type = *ptr++;
+    if (changes_type != 0) {
+	throw NetworkError("Unsupported changeset type: " + str(changes_type));
+	// FIXME - support changes of type 1, produced when DANGEROUS mode is
+	// on.
+    }
+
+    // Clear the bits of the buffer which have been read.
+    buf.erase(0, ptr - buf.data());
+
+    int fds[Glass::MAX_];
+    std::fill_n(fds, sizeof(fds) / sizeof(fds[0]), -1);
+
+    // Read the items from the changeset.
+    while (true) {
+	conn.get_message_chunk(buf, REASONABLE_CHANGESET_SIZE, end_time);
+	ptr = buf.data();
+	end = ptr + buf.size();
+	if (ptr == end)
+	    throw NetworkError("Unexpected end of changeset (3)");
+
+	// Read the type of the next chunk of data
+	// chunk type can be (in binary):
+	//
+	// 11111111 - last chunk
+	// 11111110 - version file
+	// 00BBBTTT - table block:
+	//   Block size = (2048<<BBB) BBB=0..5; Table TTT=0..(Glass::MAX_-1)
+	unsigned char chunk_type = *ptr++;
+	if (chunk_type == 0xff)
+	    break;
+	if (chunk_type == 0xfe) {
+	    // Version file.
+	    buf.erase(0, ptr - buf.data());
+	    process_changeset_chunk_version(buf, conn, end_time);
+	    continue;
+	}
+	size_t table_code = (chunk_type & 0x07);
+	if (table_code >= Glass::MAX_)
+	    throw NetworkError("Bad table code in changeset file");
+	Glass::table_type table = static_cast<Glass::table_type>(table_code);
+	unsigned char v = (chunk_type >> 3) & 0x0f;
+
+	// Process the chunk
+	buf.erase(0, ptr - buf.data());
+	process_changeset_chunk_blocks(table, v, buf, conn, end_time, fds);
+    }
+
+    if (ptr != end)
+	throw NetworkError("Junk found at end of changeset");
+
+    buf.resize(0);
+
+    for (size_t i = 0; i != Glass::MAX_; ++i) {
+	int fd_ = fds[i];
+	if (fd_ >= 0) {
+	    io_sync(fd_);
+	    ::close(fd_);
+	}
     }
 }
