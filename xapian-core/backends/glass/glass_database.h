@@ -327,6 +327,22 @@ class GlassWritableDatabase : public GlassDatabase {
 	/// Apply changes.
 	void apply();
 
+	/** Process a chunk which holds a version file.
+	 */
+	void process_changeset_chunk_version(std::string & buf,
+					     RemoteConnection & conn,
+					     double end_time) const;
+
+	/** Process a chunk which holds a list of changed blocks in the
+	 *  database.
+	 */
+	void process_changeset_chunk_blocks(Glass::table_type table,
+					    unsigned v,
+					    std::string & buf,
+					    RemoteConnection & conn,
+					    double end_time,
+					    int fds[]) const;
+
 	//@{
 	/** Implementation of virtual methods: see Database::Internal for
 	 *  details.
@@ -400,6 +416,8 @@ class GlassWritableDatabase : public GlassDatabase {
 
 	void set_metadata(const string & key, const string & value);
 	void invalidate_doc_object(Xapian::Document::Internal * obj) const;
+
+	void apply_changesets_from_fd(int fd, double end_time);
 	//@}
 };
 

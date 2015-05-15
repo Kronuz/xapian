@@ -104,6 +104,7 @@ class ConstDatabaseWrapper : public Xapian::Database::Internal {
     Xapian::docid replace_document(const string &, const Xapian::Document &);
     void write_changesets_to_fd(int, const std::string &, bool,
 				Xapian::ReplicationInfo *);
+    void apply_changesets_from_fd(int fd, double end_time);
     RemoteDatabase * as_remotedatabase();
 };
 
