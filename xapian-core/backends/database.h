@@ -523,6 +523,13 @@ class Database::Internal : public Xapian::Internal::intrusive_base {
 	 */
 	virtual int get_backend_info(string * path) const = 0;
 
+	/** Read a set of changesets from a file descriptor and apply them.
+	 *
+	 *  This call may reopen the database, leaving it pointing to a more
+	 *  recent version of the database.
+	 */
+	virtual void apply_changeset_from_fd(int fd, double end_time);
+
 	/** Find lowest and highest docids actually in use.
 	 *
 	 *  Only used by compaction, so only needs to be implemented by

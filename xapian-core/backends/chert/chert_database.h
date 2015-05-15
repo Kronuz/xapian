@@ -408,6 +408,23 @@ class ChertWritableDatabase : public ChertDatabase {
 			      char type,
 			      Xapian::termcount wdf);
 
+	/** Process a chunk which holds a base block.
+	 */
+	void process_changeset_chunk_base(const std::string & tablename,
+					  std::string & buf,
+					  RemoteConnection & conn,
+					  double end_time,
+					  int changes_fd) const;
+
+	/** Process a chunk which holds a list of changed blocks in the
+	 *  database.
+	 */
+	void process_changeset_chunk_blocks(const std::string & tablename,
+					    std::string & buf,
+					    RemoteConnection & conn,
+					    double end_time,
+					    int changes_fd) const;
+
 	//@{
 	/** Implementation of virtual methods: see Database::Internal for
 	 *  details.
@@ -478,6 +495,8 @@ class ChertWritableDatabase : public ChertDatabase {
 
 	void set_metadata(const string & key, const string & value);
 	void invalidate_doc_object(Xapian::Document::Internal * obj) const;
+
+	void apply_changeset_from_fd(int fd, double end_time);
 	//@}
 };
 

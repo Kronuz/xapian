@@ -343,3 +343,10 @@ ConstDatabaseWrapper::write_changesets_to_fd(int, const std::string &, bool,
 {
     nonconst_access();
 }
+
+void
+ConstDatabaseWrapper::apply_changeset_from_fd(int, double)
+{
+    nonconst_access();
+}
+
