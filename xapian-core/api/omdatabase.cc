@@ -733,6 +733,34 @@ Database::metadata_keys_begin(const std::string &prefix) const
     RETURN(TermIterator(internal[0]->open_metadata_keylist(prefix)));
 }
 
+void
+Database::write_changesets_to_fd(int fd,
+                      const std::string &start_revision,
+                      bool need_whole_db)
+{
+    LOGCALL_VOID(API, "Database::write_changesets_to_fd", fd | start_revision | need_whole_db | info);
+    if (rare(internal.empty()))
+        no_subdatabases();
+    internal[0]->write_changesets_to_fd(fd, start_revision, need_whole_db, NULL);
+}
+
+std::string
+Database::get_revision_info() const
+{
+    LOGCALL(API, std::string, "Database::get_revision_info", NO_ARGS);
+    string revision_info;
+    for (size_t i = 0; i < internal.size(); ++i) {
+        string sub_revision_info = internal[i]->get_revision_info();
+        // If any of the sub-databases have no revision_info, we can't make a revision_info for
+        // the combined database.
+        if (sub_revision_info.empty())
+            RETURN(sub_revision_info);
+        if (!revision_info.empty()) revision_info += ':';
+        revision_info += sub_revision_info;
+    }
+    RETURN(revision_info);
+}
+
 std::string
 Database::get_uuid() const
 {
@@ -1000,6 +1028,15 @@ WritableDatabase::get_description() const
 {
     /// @todo display contents of the writable database
     return "WritableDatabase()";
+}
+
+void
+WritableDatabase::apply_changesets_from_fd(int fd)
+{
+    LOGCALL_VOID(API, "WritableDatabase::apply_changesets_from_fd", fd);
+    if (rare(internal.empty()))
+        no_subdatabases();
+    internal[0]->apply_changesets_from_fd(fd, 0.0);
 }
 
 }

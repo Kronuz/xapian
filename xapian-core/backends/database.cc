@@ -355,6 +355,13 @@ Database::Internal::write_changesets_to_fd(int, const string &, bool, Replicatio
     throw Xapian::UnimplementedError("This backend doesn't provide changesets");
 }
 
+void
+Database::Internal::apply_changesets_from_fd(int, double)
+{
+    // Writable databases should override this method.
+    Assert(false);
+}
+
 string
 Database::Internal::get_revision_info() const
 {
