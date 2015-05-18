@@ -589,6 +589,8 @@ class GlassTable {
 	/// Throw an exception indicating that the database is closed.
 	XAPIAN_NORETURN(static void throw_database_closed());
 
+	void write_block(uint4 n, const byte *p, bool appending = false) const;
+
     protected:
 
 	/** Perform the opening operation to read. */
@@ -604,7 +606,6 @@ class GlassTable {
 	bool find(Glass::Cursor *) const;
 	int delete_kt();
 	void read_block(uint4 n, byte *p) const;
-	void write_block(uint4 n, const byte *p, bool appending = false) const;
 	XAPIAN_NORETURN(void set_overwritten() const);
 	void block_to_cursor(Glass::Cursor *C_, int j, uint4 n) const;
 	void alter();

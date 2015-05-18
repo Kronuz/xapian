@@ -607,6 +607,8 @@ class XAPIAN_VISIBILITY_DEFAULT ChertTable {
 	/// Throw an exception indicating that the database is closed.
 	XAPIAN_NORETURN(static void throw_database_closed());
 
+	void write_block(uint4 n, const byte *p) const;
+
     protected:
 
 	/** Perform the opening operation to read.
@@ -627,7 +629,6 @@ class XAPIAN_VISIBILITY_DEFAULT ChertTable {
 	bool find(Cursor *) const;
 	int delete_kt();
 	void read_block(uint4 n, byte *p) const;
-	void write_block(uint4 n, const byte *p) const;
 	XAPIAN_NORETURN(void set_overwritten() const);
 	void block_to_cursor(Cursor *C_, int j, uint4 n) const;
 	void alter();

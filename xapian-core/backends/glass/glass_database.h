@@ -331,7 +331,7 @@ class GlassWritableDatabase : public GlassDatabase {
 	 */
 	void process_changeset_chunk_version(std::string & buf,
 					     RemoteConnection & conn,
-					     double end_time) const;
+					     double end_time);
 
 	/** Process a chunk which holds a list of changed blocks in the
 	 *  database.
@@ -340,8 +340,7 @@ class GlassWritableDatabase : public GlassDatabase {
 					    unsigned v,
 					    std::string & buf,
 					    RemoteConnection & conn,
-					    double end_time,
-					    int fds[]) const;
+					    double end_time);
 
 	//@{
 	/** Implementation of virtual methods: see Database::Internal for
