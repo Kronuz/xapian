@@ -1547,9 +1547,34 @@ GlassWritableDatabase::process_changeset_chunk_version(string & buf,
     if (!conn.get_message_chunk(buf, size, end_time))
 	throw NetworkError("Unexpected end of changeset (6)");
 
+    char path[] = "/tmp/xapian_version.XXXXXX";
+    int fd = mkstemp(path);
+    if (fd < 0) {
+        throw NetworkError("Cannot write temporary file");
+    }
+    if (write(fd, buf.data(), size) != static_cast<ssize_t>(size)) {
+        throw NetworkError("Cannot write temporary file");
+    }
+
     buf.erase(0, size);
 
-    // Ignore version file!
+    ::close(fd);
+
+    GlassVersion version("");
+    try {
+    	version.read(path);
+	docdata_table.patch_version(version_file.root_to_set(Glass::DOCDATA), version.get_root(Glass::DOCDATA));
+	spelling_table.patch_version(version_file.root_to_set(Glass::SPELLING), version.get_root(Glass::SPELLING));
+	synonym_table.patch_version(version_file.root_to_set(Glass::SYNONYM), version.get_root(Glass::SYNONYM));
+	termlist_table.patch_version(version_file.root_to_set(Glass::TERMLIST), version.get_root(Glass::TERMLIST));
+	position_table.patch_version(version_file.root_to_set(Glass::POSITION), version.get_root(Glass::POSITION));
+	postlist_table.patch_version(version_file.root_to_set(Glass::POSTLIST), version.get_root(Glass::POSTLIST));
+    } catch(...) {
+	unlink(path);
+	throw;
+    }
+
+    unlink(path);
 }
 
 void
@@ -1585,7 +1610,7 @@ GlassWritableDatabase::process_changeset_chunk_blocks(Glass::table_type table,
     if (!conn.get_message_chunk(buf, changeset_blocksize, end_time))
 	throw NetworkError("Unexpected end of changeset (4)");
 
-    tables[table]->write_block(block_number, reinterpret_cast<const byte *>(buf.data()));
+    tables[table]->patch_block(block_number, reinterpret_cast<const byte *>(buf.data()));
 
     buf.erase(0, changeset_blocksize);
 }
@@ -1596,6 +1621,10 @@ GlassWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
     LOGCALL_VOID(DB, "GlassWritableDatabase::apply_changesets_from_fd", fd | end_time);
 
     RemoteConnection conn(fd, -1, string());
+
+    char type = conn.get_message_chunked(end_time);
+    (void) type; // Don't give warning about unused variable.
+    AssertEq(type, REPL_REPLY_CHANGESET);
 
     string buf;
     // Read enough to be certain that we've got the header part of the

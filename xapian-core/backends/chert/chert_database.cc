@@ -1718,10 +1718,29 @@ ChertWritableDatabase::process_changeset_chunk_base(const string &tablename,
     if (!conn.get_message_chunk(buf, base_size, end_time))
         throw NetworkError("Unexpected end of changeset (6)");
 
+    char path[] = "/tmp/xapian_base.XXXXXX.baseA";
+    path[sizeof(path) - 2] = letter;
+    int fd = mkstemps(path, 6);
+    if (fd < 0) {
+        throw NetworkError("Cannot write temporary file");
+    }
+    if (write(fd, buf.data(), base_size) != static_cast<ssize_t>(base_size)) {
+        throw NetworkError("Cannot write temporary file");
+    }
+
     buf.erase(0, base_size);
 
-    // Ignore base file!
-    (void)table;
+    ::close(fd);
+
+    path[sizeof(path) - 6] = '\0';
+    try {
+	table->patch_base(path, letter);
+    } catch(...) {
+	unlink(path);
+	throw;
+    }
+
+    unlink(path);
 }
 
 void
@@ -1767,7 +1786,7 @@ ChertWritableDatabase::process_changeset_chunk_blocks(const string & tablename,
 	if (!conn.get_message_chunk(buf, changeset_blocksize, end_time))
 	    throw NetworkError("Incomplete block in changeset");
 
-	table->write_block(block_number, reinterpret_cast<const byte *>(buf.data()));
+	table->patch_block(block_number, reinterpret_cast<const byte *>(buf.data()));
 
 	buf.erase(0, changeset_blocksize);
     }

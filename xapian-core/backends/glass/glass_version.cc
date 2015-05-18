@@ -69,9 +69,15 @@ static const char GLASS_VERSION_MAGIC[GLASS_VERSION_MAGIC_AND_VERSION_LEN] = {
 void
 GlassVersion::read()
 {
-    LOGCALL_VOID(DB, "GlassVersion::read", NO_ARGS);
     string filename = db_dir;
     filename += "/iamglass";
+    read(filename);
+}
+
+void
+GlassVersion::read(const std::string & filename)
+{
+    LOGCALL_VOID(DB, "GlassVersion::read", NO_ARGS);
     int fd_in = posixy_open(filename.c_str(), O_RDONLY|O_BINARY);
     if (rare(fd_in < 0)) {
 	string msg = filename;

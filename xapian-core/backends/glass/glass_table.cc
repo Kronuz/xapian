@@ -266,6 +266,27 @@ GlassTable::write_block(uint4 n, const byte * p, bool appending) const
     changes_obj->write_block(reinterpret_cast<const char *>(p), block_size);
 }
 
+void
+GlassTable::patch_version(RootInfo *root_info, const RootInfo &new_root_info)
+{
+    *root_info = new_root_info;
+
+    set_blocksize(root_info->get_blocksize());
+    root =             root_info->get_root();
+    level =            root_info->get_level();
+    item_count =       root_info->get_num_entries();
+    faked_root_block = root_info->get_root_is_fake();
+    sequential =       root_info->get_sequential_mode();
+
+    Btree_modified = true;
+}
+
+void
+GlassTable::patch_block(uint4 n, const byte * p)
+{
+    write_block(n, p);
+}
+
 /* A note on cursors:
 
    Each B-tree level has a corresponding array element C[j] in a
