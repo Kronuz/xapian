@@ -623,6 +623,10 @@ class ChertTable {
 	    return name;
 	}
 
+	/// Patches the current base with the bitmap in the base file located in name.
+	void patch_base(const string & name_, char ch);
+	void patch_block(uint4 n, const byte *p);
+
     protected:
 
 	/** Perform the opening operation to read.

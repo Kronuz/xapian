@@ -94,28 +94,36 @@ GlassVersion::~GlassVersion()
 void
 GlassVersion::read()
 {
-    LOGCALL_VOID(DB, "GlassVersion::read", NO_ARGS);
-    FD close_fd(-1);
-    int fd_in;
     if (single_file()) {
 	if (rare(lseek(fd, offset, SEEK_SET) == off_t(-1))) {
 	    string msg = "Failed to rewind file descriptor ";
 	    msg += str(fd);
 	    throw Xapian::DatabaseOpeningError(msg, errno);
 	}
-	fd_in = fd;
+	read(fd);
     } else {
 	string filename = db_dir;
 	filename += "/iamglass";
-	fd_in = posixy_open(filename.c_str(), O_RDONLY|O_BINARY);
-	if (rare(fd_in < 0)) {
-	    string msg = filename;
-	    msg += ": Failed to open glass revision file for reading";
-	    throw Xapian::DatabaseOpeningError(msg, errno);
-	}
-	close_fd = fd_in;
+	read(filename);
     }
+}
 
+void
+GlassVersion::read(const std::string & filename)
+{
+    int fd_in = posixy_open(filename.c_str(), O_RDONLY|O_BINARY);
+    if (rare(fd_in < 0)) {
+	string msg = filename;
+	msg += ": Failed to open glass revision file for reading";
+	throw Xapian::DatabaseOpeningError(msg, errno);
+    }
+    FD close_fd(fd_in);
+    read(fd_in);
+}
+
+void
+GlassVersion::read(int fd_in)
+{
     char buf[256];
 
     const char * p = buf;

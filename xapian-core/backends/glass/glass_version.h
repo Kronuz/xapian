@@ -174,6 +174,8 @@ class GlassVersion {
      *  On failure, an exception is thrown.
      */
     void read();
+    void read(int fd_in);
+    void read(const std::string & filename);
 
     void cancel();
 

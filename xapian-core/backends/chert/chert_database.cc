@@ -1709,12 +1709,23 @@ ChertWritableDatabase::invalidate_doc_object(Xapian::Document::Internal * obj) c
 }
 
 void
-ChertWritableDatabase::process_changeset_chunk_base(const string & tablename,
+ChertWritableDatabase::process_changeset_chunk_base(const string &tablename,
                                                     string & buf,
                                                     RemoteConnection & conn,
-                                                    double end_time,
-                                                    int changes_fd) const
+                                                    double end_time)
 {
+    ChertTable *table;
+    if (tablename == "postlist") table = &postlist_table; else
+    if (tablename == "position") table = &position_table; else
+    if (tablename == "termlist") table = &termlist_table; else
+    if (tablename == "synonym") table = &synonym_table; else
+    if (tablename == "spelling") table = &spelling_table; else
+    if (tablename == "record") table = &record_table; else {
+	string msg = "Failed to access ";
+	msg += tablename;
+	throw NetworkError(msg);
+    }
+
     const char *ptr = buf.data();
     const char *end = ptr + buf.size();
 
@@ -1737,49 +1748,51 @@ ChertWritableDatabase::process_changeset_chunk_base(const string & tablename,
     if (!conn.get_message_chunk(buf, base_size, end_time))
         throw NetworkError("Unexpected end of changeset (6)");
 
-    // Write base_size bytes from start of buf to base file for tablename
-    string tmp_path = db_dir + "/" + tablename + "tmp";
-    string base_path = db_dir + "/" + tablename + ".base" + letter;
-    int fd = posixy_open(tmp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
-    if (fd == -1) {
-        string msg = "Failed to open ";
-        msg += tmp_path;
-        throw DatabaseError(msg, errno);
+    char path[] = "/tmp/xapian_base.XXXXXX.baseA";
+    path[sizeof(path) - 2] = letter;
+    int fd = mkstemps(path, 6);
+    if (fd < 0) {
+        throw NetworkError("Cannot write temporary file");
     }
-    {
-        FD closer(fd);
-
-        io_write(fd, buf.data(), base_size);
-        io_sync(fd);
+    if (write(fd, buf.data(), base_size) != static_cast<ssize_t>(base_size)) {
+        throw NetworkError("Cannot write temporary file");
     }
 
     buf.erase(0, base_size);
 
-    // Move the base file into place.
-    if (posixy_rename(tmp_path.c_str(), base_path.c_str()) < 0) {
-        // With NFS, rename() failing may just mean that the server crashed
-        // after successfully renaming, but before reporting this, and then
-        // the retried operation fails.  So we need to check if the source
-        // file still exists, which we do by calling unlink(), since we want
-        // to remove the temporary file anyway.
-        int saved_errno = errno;
-        if (unlink(tmp_path.c_str()) == 0 || errno != ENOENT) {
-            string msg("Couldn't update base file ");
-            msg += tablename;
-            msg += ".base";
-            msg += letter;
-            throw DatabaseError(msg, saved_errno);
-        }
+    ::close(fd);
+
+    path[sizeof(path) - 6] = '\0';
+    try {
+	table->patch_base(path, letter);
+    } catch(...) {
+    	path[sizeof(path) - 6] = 'b';
+	unlink(path);
+	throw;
     }
+
+    path[sizeof(path) - 6] = 'b';
+    unlink(path);
 }
 
 void
 ChertWritableDatabase::process_changeset_chunk_blocks(const string & tablename,
                                                       string & buf,
                                                       RemoteConnection & conn,
-                                                      double end_time,
-                                                      int changes_fd) const
+                                                      double end_time)
 {
+    ChertTable *table;
+    if (tablename == "postlist") table = &postlist_table; else
+    if (tablename == "position") table = &position_table; else
+    if (tablename == "termlist") table = &termlist_table; else
+    if (tablename == "synonym") table = &synonym_table; else
+    if (tablename == "spelling") table = &spelling_table; else
+    if (tablename == "record") table = &record_table; else {
+	string msg = "Failed to access ";
+	msg += tablename;
+	throw NetworkError(msg);
+    }
+
     const char *ptr = buf.data();
     const char *end = ptr + buf.size();
 
@@ -1789,37 +1802,25 @@ ChertWritableDatabase::process_changeset_chunk_blocks(const string & tablename,
 
     buf.erase(0, ptr - buf.data());
 
-    string db_path = db_dir + "/" + tablename + ".DB";
-    int fd = posixy_open(db_path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
-    if (fd == -1) {
-	string msg = "Failed to open ";
-	msg += db_path;
-	throw DatabaseError(msg, errno);
-    }
-    {
-	FD closer(fd);
+    while (true) {
+	conn.get_message_chunk(buf, REASONABLE_CHANGESET_SIZE, end_time);
+	ptr = buf.data();
+	end = ptr + buf.size();
 
-	while (true) {
-	    conn.get_message_chunk(buf, REASONABLE_CHANGESET_SIZE, end_time);
-	    ptr = buf.data();
-	    end = ptr + buf.size();
-
-	    uint4 block_number;
-	    if (!unpack_uint(&ptr, end, &block_number))
-		throw NetworkError("Invalid block number in changeset");
+	uint4 block_number;
+	if (!unpack_uint(&ptr, end, &block_number))
+	    throw NetworkError("Invalid block number in changeset");
 	buf.erase(0, ptr - buf.data());
-	    if (block_number == 0)
-		break;
-	    --block_number;
+	if (block_number == 0)
+	    break;
+	--block_number;
 
-	    if (!conn.get_message_chunk(buf, changeset_blocksize, end_time))
-		throw NetworkError("Incomplete block in changeset");
+	if (!conn.get_message_chunk(buf, changeset_blocksize, end_time))
+	    throw NetworkError("Incomplete block in changeset");
 
-	    io_write_block(fd, buf.data(), changeset_blocksize, block_number);
+	table->patch_block(block_number, reinterpret_cast<const byte *>(buf.data()));
 
-	    buf.erase(0, changeset_blocksize);
-	}
-	io_sync(fd);
+	buf.erase(0, changeset_blocksize);
     }
 }
 
@@ -1828,7 +1829,11 @@ ChertWritableDatabase::apply_changeset_from_fd(int fd, double end_time)
 {
     LOGCALL_VOID(DB, "ChertWritableDatabase::apply_changeset_from_fd", fd | end_time);
 
-    RemoteConnection conn(-1, fd, string());
+    RemoteConnection conn(fd, -1, string());
+
+    char type = conn.get_message_chunked(end_time);
+    (void) type; // Don't give warning about unused variable.
+    AssertEq(type, REPL_REPLY_CHANGESET);
 
     string buf;
     // Read enough to be certain that we've got the header part of the
@@ -1864,18 +1869,11 @@ ChertWritableDatabase::apply_changeset_from_fd(int fd, double end_time)
     if (ptr == end)
         throw NetworkError("Unexpected end of changeset (1)");
 
-    FD changes_fd;
-    string changes_name;
-    if (max_changesets > 0) {
-        changes_fd = create_changeset_file(db_dir, "changes" + str(startrev),
-                                           changes_name);
-    }
-
     // Check the revision number.
     if (startrev != record_table.get_open_revision_number())
         throw NetworkError("Changeset supplied is for wrong revision number");
 
-    unsigned char changes_type = ptr[0];
+    unsigned char changes_type = *ptr++;
     if (changes_type != 0) {
         throw NetworkError("Unsupported changeset type: " + str(changes_type));
         // FIXME - support changes of type 1, produced when DANGEROUS mode is
@@ -1894,8 +1892,7 @@ ChertWritableDatabase::apply_changeset_from_fd(int fd, double end_time)
         // Read the type of the next chunk of data
         if (ptr == end)
             throw NetworkError("Unexpected end of changeset (2)");
-        unsigned char chunk_type = ptr[0];
-        ++ptr;
+        unsigned char chunk_type = *ptr++;
         if (chunk_type == 0)
             break;
 
@@ -1916,12 +1913,10 @@ ChertWritableDatabase::apply_changeset_from_fd(int fd, double end_time)
 
         switch (chunk_type) {
             case 1:
-                process_changeset_chunk_base(tablename, buf, conn, end_time,
-                                             changes_fd);
+                process_changeset_chunk_base(tablename, buf, conn, end_time);
                 break;
             case 2:
-                process_changeset_chunk_blocks(tablename, buf, conn, end_time,
-                                               changes_fd);
+                process_changeset_chunk_blocks(tablename, buf, conn, end_time);
                 break;
             default:
                 throw NetworkError("Unrecognised item type in changeset");
@@ -1934,6 +1929,10 @@ ChertWritableDatabase::apply_changeset_from_fd(int fd, double end_time)
         throw NetworkError("Required revision in changeset is earlier than end revision");
     if (ptr != end)
         throw NetworkError("Junk found at end of changeset");
+
+    stats.read(postlist_table);
+
+    set_revision_number(endrev);
 
     buf.resize(0);
 }

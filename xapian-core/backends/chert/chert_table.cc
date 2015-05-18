@@ -226,6 +226,45 @@ ChertTable::write_block(uint4 n, const byte * p) const
     io_write_block(handle, reinterpret_cast<const char *>(p), block_size, n);
 }
 
+void
+ChertTable::patch_base(const string & name_, char ch)
+{
+    LOGCALL_VOID(DB, "ChertTable::patch_base", name_ | ch);
+    int level_;
+
+    base.patch(name_, ch);
+
+    block_size =       base.get_block_size();
+    root =             base.get_root();
+    level_ =           base.get_level();
+    item_count =       base.get_item_count();
+    faked_root_block = base.get_have_fakeroot();
+    sequential =       base.get_sequential();
+
+    Btree_modified = true;
+
+    if (level != level_) {
+	level = level_;
+	if (cursor_created_since_last_modification) {
+	    cursor_created_since_last_modification = false;
+	    ++cursor_version;
+	}
+    }
+}
+
+void
+ChertTable::patch_block(uint4 n, const byte *p)
+{
+    LOGCALL_VOID(DB, "ChertTable::patch_block", n | p);
+    for (int j = 0; j <= level; j++) {
+	if (n == C[j].n) {
+            // when exists, should we write to C[j].p if n == C[j].n
+	    memcpy(C[j].p, p, block_size);
+	    break;
+	}
+    }
+    write_block(n, p);
+}
 
 /* A note on cursors:
 

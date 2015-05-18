@@ -676,6 +676,9 @@ class GlassTable {
 	    return name + GLASS_TABLE_EXTENSION;
 	}
 
+	void patch_version(RootInfo *root_info, const RootInfo &new_root_info);
+	void patch_block(uint4 n, const byte *p);
+
     protected:
 
 	/** Perform the opening operation to read. */
