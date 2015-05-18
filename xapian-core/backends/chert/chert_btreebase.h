@@ -116,6 +116,7 @@ class ChertTable_base {
 	void commit();
 
 	void swap(ChertTable_base &other);
+	void patch(const std::string & name, char ch);
 
     private:
 	/** No copying. */

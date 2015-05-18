@@ -609,6 +609,10 @@ class XAPIAN_VISIBILITY_DEFAULT ChertTable {
 	/// Throw an exception indicating that the database is closed.
 	XAPIAN_NORETURN(static void throw_database_closed());
 
+	/// Patches the current base with the bitmap in the base file located in name.
+	void patch_base(const string & name_, char ch);
+	void patch_block(uint4 n, const byte *p);
+
     protected:
 
 	/** Perform the opening operation to read.

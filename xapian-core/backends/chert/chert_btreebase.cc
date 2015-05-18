@@ -105,6 +105,35 @@ ChertTable_base::swap(ChertTable_base &other)
     std::swap(bit_map, other.bit_map);
 }
 
+void
+ChertTable_base::patch(const string & name, char ch)
+{
+    string err_msg;
+    ChertTable_base other;
+    if (!other.read(name, ch, true, err_msg)) {
+    	throw Xapian::DatabaseOpeningError("Patch file for base cannot be opened!");
+    }
+
+    if (block_size != other.block_size) {
+	throw Xapian::DatabaseCorruptError("Block size mismatch.");
+    }
+
+    std::swap(root, other.root);
+    std::swap(level, other.level);
+    std::swap(item_count, other.item_count);
+    std::swap(last_block, other.last_block);
+    std::swap(have_fakeroot, other.have_fakeroot);
+    std::swap(sequential, other.sequential);
+    std::swap(bit_map_low, other.bit_map_low);
+
+    while (other.bit_map_size > bit_map_size)
+	extend_bit_map();
+
+    memcpy(bit_map, other.bit_map, other.bit_map_size);
+    if (other.bit_map_size < bit_map_size)
+    	memset(bit_map + other.bit_map_size, 0, bit_map_size - other.bit_map_size);
+}
+
 ChertTable_base::~ChertTable_base()
 {
     delete [] bit_map;

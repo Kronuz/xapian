@@ -88,14 +88,6 @@ using Xapian::Internal::intrusive_ptr;
 // byte in the term).
 #define MAX_SAFE_TERM_LENGTH 245
 
-static const char * dbnames =
-	"/postlist." GLASS_TABLE_EXTENSION "\0"
-	"/docdata." GLASS_TABLE_EXTENSION "\0\0"
-	"/termlist." GLASS_TABLE_EXTENSION "\0"
-	"/position." GLASS_TABLE_EXTENSION "\0"
-	"/spelling." GLASS_TABLE_EXTENSION "\0"
-	"/synonym." GLASS_TABLE_EXTENSION;
-
 /* This opens the tables, determining the current and next revision numbers,
  * and stores handles to the tables.
  */
@@ -1554,7 +1546,7 @@ GlassWritableDatabase::invalidate_doc_object(Xapian::Document::Internal * obj) c
 void
 GlassWritableDatabase::process_changeset_chunk_version(string & buf,
 						       RemoteConnection & conn,
-						       double end_time) const
+						       double end_time)
 {
     const char *ptr = buf.data();
     const char *end = ptr + buf.size();
@@ -1572,37 +1564,34 @@ GlassWritableDatabase::process_changeset_chunk_version(string & buf,
     if (!conn.get_message_chunk(buf, size, end_time))
 	throw NetworkError("Unexpected end of changeset (6)");
 
-    // Write size bytes from start of buf to new version file.
-    string tmpfile = db_dir;
-    tmpfile += "/v.rtmp";
-    int fd = posixy_open(tmpfile.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
-    if (fd == -1) {
-	string msg = "Failed to open ";
-	msg += tmpfile;
-	throw DatabaseError(msg, errno);
+    char path[] = "/tmp/xapian_version.XXXXXX";
+    int fd = mkstemp(path);
+    if (fd < 0) {
+        throw NetworkError("Cannot write temporary file");
     }
-    {
-	FD closer(fd);
-	io_write(fd, buf.data(), size);
-	io_sync(fd);
-    }
-    string version_file = db_dir;
-    version_file += "/iamglass";
-    if (posixy_rename(tmpfile.c_str(), version_file.c_str()) < 0) {
-	// With NFS, rename() failing may just mean that the server crashed
-	// after successfully renaming, but before reporting this, and then
-	// the retried operation fails.  So we need to check if the source
-	// file still exists, which we do by calling unlink(), since we want
-	// to remove the temporary file anyway.
-	int saved_errno = errno;
-	if (unlink(tmpfile.c_str()) == 0 || errno != ENOENT) {
-	    string msg("Couldn't create new version file ");
-	    msg += version_file;
-	    throw DatabaseError(msg, saved_errno);
-	}
+    if (write(fd, buf.data(), size) != static_cast<ssize_t>(size)) {
+        throw NetworkError("Cannot write temporary file");
     }
 
     buf.erase(0, size);
+
+    ::close(fd);
+
+    GlassVersion version("");
+    try {
+    	version.read(path);
+	docdata_table.patch_version(version_file.root_to_set(Glass::DOCDATA), version.get_root(Glass::DOCDATA));
+	spelling_table.patch_version(version_file.root_to_set(Glass::SPELLING), version.get_root(Glass::SPELLING));
+	synonym_table.patch_version(version_file.root_to_set(Glass::SYNONYM), version.get_root(Glass::SYNONYM));
+	termlist_table.patch_version(version_file.root_to_set(Glass::TERMLIST), version.get_root(Glass::TERMLIST));
+	position_table.patch_version(version_file.root_to_set(Glass::POSITION), version.get_root(Glass::POSITION));
+	postlist_table.patch_version(version_file.root_to_set(Glass::POSTLIST), version.get_root(Glass::POSTLIST));
+    } catch(...) {
+	unlink(path);
+	throw;
+    }
+
+    unlink(path);
 }
 
 void
@@ -1610,9 +1599,17 @@ GlassWritableDatabase::process_changeset_chunk_blocks(Glass::table_type table,
 						      unsigned v,
 						      string & buf,
 						      RemoteConnection & conn,
-						      double end_time,
-						      int fds[]) const
+						      double end_time)
 {
+    GlassTable *tables[] = {
+	&postlist_table,
+	&docdata_table,
+	&termlist_table,
+	&position_table,
+	&spelling_table,
+	&synonym_table,
+    };
+
     const char *ptr = buf.data();
     const char *end = ptr + buf.size();
 
@@ -1627,23 +1624,11 @@ GlassWritableDatabase::process_changeset_chunk_blocks(Glass::table_type table,
 
     buf.erase(0, ptr - buf.data());
 
-    int fd = fds[table];
-    if (fd == -1) {
-	string db_path = db_dir;
-	db_path += dbnames + table * (11 + CONST_STRLEN(GLASS_TABLE_EXTENSION));
-	fd = posixy_open(db_path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
-	if (fd == -1) {
-	    string msg = "Failed to open ";
-	    msg += db_path;
-	    throw DatabaseError(msg, errno);
-	}
-	fds[table] = fd;
-    }
-
     if (!conn.get_message_chunk(buf, changeset_blocksize, end_time))
 	throw NetworkError("Unexpected end of changeset (4)");
 
-    io_write_block(fd, buf.data(), changeset_blocksize, block_number);
+    tables[table]->patch_block(block_number, reinterpret_cast<const byte *>(buf.data()));
+
     buf.erase(0, changeset_blocksize);
 }
 
@@ -1651,9 +1636,12 @@ void
 GlassWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
 {
     LOGCALL_VOID(DB, "GlassWritableDatabase::apply_changesets_from_fd", fd | end_time);
-    fprintf(stderr, "apply_changesets_from_fd to: %d %f", fd, end_time);
 
-    RemoteConnection conn(-1, fd, string());
+    RemoteConnection conn(fd, -1, string());
+
+    char type = conn.get_message_chunked(end_time);
+    (void) type; // Don't give warning about unused variable.
+    AssertEq(type, REPL_REPLY_CHANGESET);
 
     string buf;
     // Read enough to be certain that we've got the header part of the
@@ -1701,9 +1689,6 @@ GlassWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
     // Clear the bits of the buffer which have been read.
     buf.erase(0, ptr - buf.data());
 
-    int fds[Glass::MAX_];
-    std::fill_n(fds, sizeof(fds) / sizeof(fds[0]), -1);
-
     // Read the items from the changeset.
     while (true) {
 	conn.get_message_chunk(buf, REASONABLE_CHANGESET_SIZE, end_time);
@@ -1736,19 +1721,16 @@ GlassWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
 
 	// Process the chunk
 	buf.erase(0, ptr - buf.data());
-	process_changeset_chunk_blocks(table, v, buf, conn, end_time, fds);
+	process_changeset_chunk_blocks(table, v, buf, conn, end_time);
     }
 
     if (ptr != end)
 	throw NetworkError("Junk found at end of changeset");
 
-    buf.resize(0);
+    stats.read(postlist_table);
 
-    for (size_t i = 0; i != Glass::MAX_; ++i) {
-	int fd_ = fds[i];
-	if (fd_ >= 0) {
-	    io_sync(fd_);
-	    ::close(fd_);
-	}
-    }
+    int flags = postlist_table.get_flags();
+    set_revision_number(flags, endrev);
+
+    buf.resize(0);
 }
