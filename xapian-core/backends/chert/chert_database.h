@@ -389,8 +389,7 @@ class ChertWritableDatabase : public ChertDatabase {
 	void process_changeset_chunk_base(const std::string & tablename,
 					  std::string & buf,
 					  RemoteConnection & conn,
-					  double end_time,
-					  int changes_fd) const;
+					  double end_time) const;
 
 	/** Process a chunk which holds a list of changed blocks in the
 	 *  database.
@@ -398,8 +397,7 @@ class ChertWritableDatabase : public ChertDatabase {
 	void process_changeset_chunk_blocks(const std::string & tablename,
 					    std::string & buf,
 					    RemoteConnection & conn,
-					    double end_time,
-					    int changes_fd) const;
+					    double end_time) const;
 
 	//@{
 	/** Implementation of virtual methods: see Database::Internal for

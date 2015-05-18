@@ -1682,8 +1682,7 @@ void
 ChertWritableDatabase::process_changeset_chunk_base(const string & tablename,
                                                     string & buf,
                                                     RemoteConnection & conn,
-                                                    double end_time,
-                                                    int changes_fd) const
+                                                    double end_time) const
 {
     const char *ptr = buf.data();
     const char *end = ptr + buf.size();
@@ -1747,8 +1746,7 @@ void
 ChertWritableDatabase::process_changeset_chunk_blocks(const string & tablename,
                                                       string & buf,
                                                       RemoteConnection & conn,
-                                                      double end_time,
-                                                      int changes_fd) const
+                                                      double end_time) const
 {
     const char *ptr = buf.data();
     const char *end = ptr + buf.size();
@@ -1777,7 +1775,7 @@ ChertWritableDatabase::process_changeset_chunk_blocks(const string & tablename,
 	    uint4 block_number;
 	    if (!unpack_uint(&ptr, end, &block_number))
 		throw NetworkError("Invalid block number in changeset");
-	buf.erase(0, ptr - buf.data());
+	    buf.erase(0, ptr - buf.data());
 	    if (block_number == 0)
 		break;
 	    --block_number;
@@ -1835,13 +1833,6 @@ ChertWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
     if (ptr == end)
         throw NetworkError("Unexpected end of changeset (1)");
 
-    FD changes_fd;
-    string changes_name;
-    if (max_changesets > 0) {
-        changes_fd = create_changeset_file(db_dir, "changes" + str(startrev),
-                                           changes_name);
-    }
-
     // Check the revision number.
     if (startrev != record_table.get_open_revision_number())
         throw NetworkError("Changeset supplied is for wrong revision number");
@@ -1887,12 +1878,10 @@ ChertWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
 
         switch (chunk_type) {
             case 1:
-                process_changeset_chunk_base(tablename, buf, conn, end_time,
-                                             changes_fd);
+                process_changeset_chunk_base(tablename, buf, conn, end_time);
                 break;
             case 2:
-                process_changeset_chunk_blocks(tablename, buf, conn, end_time,
-                                               changes_fd);
+                process_changeset_chunk_blocks(tablename, buf, conn, end_time);
                 break;
             default:
                 throw NetworkError("Unrecognised item type in changeset");
