@@ -244,7 +244,13 @@ ChertTable::patch_base(const string & name_, char ch)
 void
 ChertTable::patch_block(uint4 n, const byte *p)
 {
-    // when exists, should we write to C[j].p if n == C[j].n here instead?
+    for (int j = 0; j <= level; j++) {
+	if (n == C[j].n) {
+            // when exists, should we write to C[j].p if n == C[j].n
+	    memcpy(C[j].p, p, block_size);
+	    break;
+	}
+    }
     write_block(n, p);
 }
 
