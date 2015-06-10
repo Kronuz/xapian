@@ -1898,6 +1898,8 @@ ChertWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
     if (ptr != end)
         throw NetworkError("Junk found at end of changeset");
 
+    stats.read(postlist_table);
+
     set_revision_number(endrev);
 
     buf.resize(0);
