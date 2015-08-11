@@ -1718,8 +1718,8 @@ ChertWritableDatabase::process_changeset_chunk_base(const string &tablename,
     if (!conn.get_message_chunk(buf, base_size, end_time))
         throw NetworkError("Unexpected end of changeset (6)");
 
-    char path[] = "/tmp/xapian_base.XXXXXX.baseA";
-    path[sizeof(path) - 2] = letter;
+    char path[] = "/tmp/xapian_base.baseA.XXXXXX";
+    path[sizeof("/tmp/xapian_base.baseA") - 2] = letter;
     int fd = mkstemps(path, 6);
     if (fd < 0) {
         throw NetworkError("Cannot write temporary file");
