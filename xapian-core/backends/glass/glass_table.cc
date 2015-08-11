@@ -284,6 +284,17 @@ GlassTable::patch_version(RootInfo *root_info, const RootInfo &new_root_info)
 void
 GlassTable::patch_block(uint4 n, const byte * p)
 {
+    for (int j = 0; j <= level; j++) {
+	if (n == C[j].get_n()) {
+	    // when exists, should we write to C[j].p if n == C[j].n
+	    byte *Cp = C[j].get_modifiable_p(block_size);
+	    if (Cp != NULL) {
+		memcpy(Cp, p, block_size);
+	    }
+	    break;
+	}
+    }
+
     write_block(n, p);
 }
 
