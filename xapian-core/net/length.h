@@ -62,6 +62,8 @@ encode_length(T len)
  *  @param end	Pointer to the end of the string.
  *  @param[out] out	The decoded length.
  */
+void decode_length(const char ** p, const char *end, size_t & out);
+
 void decode_length(const char ** p, const char *end, uint32_t & out);
 
 void decode_length(const char ** p, const char *end, uint64_t & out);
@@ -76,6 +78,8 @@ void decode_length(const char ** p, const char *end, uint64_t & out);
  *  @param end	Pointer to the end of the string.
  *  @param[out] out	The decoded length.
  */
+void decode_length_and_check(const char ** p, const char *end, size_t & out);
+
 void decode_length_and_check(const char ** p, const char *end, uint32_t & out);
 
 void decode_length_and_check(const char ** p, const char *end, uint64_t & out);

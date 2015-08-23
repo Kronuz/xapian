@@ -91,6 +91,12 @@ decode_length_and_check_(const char ** p, const char *end, T & out)
 }
 
 void
+decode_length(const char ** p, const char *end, size_t & out)
+{
+    decode_length_(p, end, out);
+}
+
+void
 decode_length(const char ** p, const char *end, uint32_t & out)
 {
     decode_length_(p, end, out);
@@ -100,6 +106,12 @@ void
 decode_length(const char ** p, const char *end, uint64_t & out)
 {
     decode_length_(p, end, out);
+}
+
+void
+decode_length_and_check(const char ** p, const char *end, size_t & out)
+{
+    decode_length_and_check_(p, end, out);
 }
 
 void
