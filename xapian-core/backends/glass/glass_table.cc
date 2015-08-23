@@ -269,16 +269,26 @@ GlassTable::write_block(uint4 n, const byte * p, bool appending) const
 void
 GlassTable::patch_version(RootInfo *root_info, const RootInfo &new_root_info)
 {
+    int level_;
+
     *root_info = new_root_info;
 
     set_blocksize(root_info->get_blocksize());
     root =             root_info->get_root();
-    level =            root_info->get_level();
+    level_ =           root_info->get_level();
     item_count =       root_info->get_num_entries();
     faked_root_block = root_info->get_root_is_fake();
     sequential =       root_info->get_sequential_mode();
 
     Btree_modified = true;
+
+    if (level != level_) {
+	level = level_;
+	if (cursor_created_since_last_modification) {
+	    cursor_created_since_last_modification = false;
+	    ++cursor_version;
+	}
+    }
 }
 
 void

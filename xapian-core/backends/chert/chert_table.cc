@@ -229,16 +229,26 @@ ChertTable::write_block(uint4 n, const byte * p) const
 void
 ChertTable::patch_base(const string & name_, char ch)
 {
+    int level_;
+
     base.patch(name_, ch);
 
     block_size =       base.get_block_size();
     root =             base.get_root();
-    level =            base.get_level();
+    level_ =           base.get_level();
     item_count =       base.get_item_count();
     faked_root_block = base.get_have_fakeroot();
     sequential =       base.get_sequential();
 
     Btree_modified = true;
+
+    if (level != level_) {
+	level = level_;
+	if (cursor_created_since_last_modification) {
+	    cursor_created_since_last_modification = false;
+	    ++cursor_version;
+	}
+    }
 }
 
 void
