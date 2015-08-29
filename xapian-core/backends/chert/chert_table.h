@@ -658,7 +658,7 @@ class ChertTable {
 	void add_item(Item_wr kt, int j);
 	void delete_item(int j, bool repeatedly);
 	int add_kt(bool found);
-	void read_root();
+	void read_root(bool check = true);
 	void split_root(uint4 split_n);
 	void form_key(const std::string & key) const;
 

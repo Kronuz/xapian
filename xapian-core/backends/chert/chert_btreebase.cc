@@ -118,6 +118,8 @@ ChertTable_base::patch(const string & name, char ch)
 	throw Xapian::DatabaseCorruptError("Block size mismatch.");
     }
 
+    std::swap(revision, other.revision);
+    std::swap(block_size, other.block_size);
     std::swap(root, other.root);
     std::swap(level, other.level);
     std::swap(item_count, other.item_count);

@@ -676,7 +676,7 @@ class GlassTable {
 	    return name + GLASS_TABLE_EXTENSION;
 	}
 
-	void patch_version(RootInfo *root_info, const RootInfo &new_root_info);
+	void patch_version(glass_revision_number_t revision, RootInfo *root_info, const RootInfo &new_root_info);
 	void patch_block(uint4 n, const byte *p);
 
     protected:
@@ -709,7 +709,7 @@ class GlassTable {
 	void delete_leaf_item(bool repeatedly);
 	void delete_branch_item(int j);
 	int add_kt(bool found);
-	void read_root();
+	void read_root(bool check = true);
 	void split_root(uint4 split_n);
 	void form_key(const std::string & key) const;
 
