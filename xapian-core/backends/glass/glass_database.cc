@@ -1580,12 +1580,12 @@ GlassWritableDatabase::process_changeset_chunk_version(string & buf,
     GlassVersion version("");
     try {
     	version.read(path);
-	docdata_table.patch_version(version_file.root_to_set(Glass::DOCDATA), version.get_root(Glass::DOCDATA));
-	spelling_table.patch_version(version_file.root_to_set(Glass::SPELLING), version.get_root(Glass::SPELLING));
-	synonym_table.patch_version(version_file.root_to_set(Glass::SYNONYM), version.get_root(Glass::SYNONYM));
-	termlist_table.patch_version(version_file.root_to_set(Glass::TERMLIST), version.get_root(Glass::TERMLIST));
-	position_table.patch_version(version_file.root_to_set(Glass::POSITION), version.get_root(Glass::POSITION));
-	postlist_table.patch_version(version_file.root_to_set(Glass::POSTLIST), version.get_root(Glass::POSTLIST));
+	docdata_table.patch_version(rev, version_file.root_to_set(Glass::DOCDATA), version.get_root(Glass::DOCDATA));
+	spelling_table.patch_version(rev, version_file.root_to_set(Glass::SPELLING), version.get_root(Glass::SPELLING));
+	synonym_table.patch_version(rev, version_file.root_to_set(Glass::SYNONYM), version.get_root(Glass::SYNONYM));
+	termlist_table.patch_version(rev, version_file.root_to_set(Glass::TERMLIST), version.get_root(Glass::TERMLIST));
+	position_table.patch_version(rev, version_file.root_to_set(Glass::POSITION), version.get_root(Glass::POSITION));
+	postlist_table.patch_version(rev, version_file.root_to_set(Glass::POSTLIST), version.get_root(Glass::POSTLIST));
     } catch(...) {
 	unlink(path);
 	throw;
@@ -1689,6 +1689,18 @@ GlassWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
     // Clear the bits of the buffer which have been read.
     buf.erase(0, ptr - buf.data());
 
+    int flags = postlist_table.get_flags();
+
+    GlassChanges * p;
+    p = changes.start(startrev, endrev, flags);
+    version_file.set_changes(p);
+    postlist_table.set_changes(p);
+    position_table.set_changes(p);
+    termlist_table.set_changes(p);
+    synonym_table.set_changes(p);
+    spelling_table.set_changes(p);
+    docdata_table.set_changes(p);
+
     // Read the items from the changeset.
     while (true) {
 	conn.get_message_chunk(buf, REASONABLE_CHANGESET_SIZE, end_time);
@@ -1729,7 +1741,7 @@ GlassWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
 
     stats.read(postlist_table);
 
-    int flags = postlist_table.get_flags();
+    flags = postlist_table.get_flags();
     set_revision_number(flags, endrev);
 
     buf.resize(0);

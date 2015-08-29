@@ -267,28 +267,38 @@ GlassTable::write_block(uint4 n, const byte * p, bool appending) const
 }
 
 void
-GlassTable::patch_version(RootInfo *root_info, const RootInfo &new_root_info)
+GlassTable::patch_version(glass_revision_number_t revision, RootInfo *root_info, const RootInfo &new_root_info)
 {
     LOGCALL_VOID(DB, "GlassTable::patch_version", root_info | new_root_info);
-    int level_;
 
     *root_info = new_root_info;
 
     set_blocksize(root_info->get_blocksize());
     root =             root_info->get_root();
-    level_ =           root_info->get_level();
+    level =            root_info->get_level();
     item_count =       root_info->get_num_entries();
     faked_root_block = root_info->get_root_is_fake();
     sequential =       root_info->get_sequential_mode();
+    const string & fl_serialised = root_info->get_free_list();
+    if (!fl_serialised.empty()) {
+	if (!free_list.unpack(root_info->get_free_list()))
+	    throw Xapian::DatabaseCorruptError("Bad freelist metadata");
+    } else {
+	free_list.reset();
+    }
 
-    Btree_modified = true;
+    if (sequential) return;
 
-    if (level != level_) {
-	level = level_;
-	if (cursor_created_since_last_modification) {
-	    cursor_created_since_last_modification = false;
-	    ++cursor_version;
-	}
+    if (C[level].get_n() != root || REVISION(C[level].get_p()) < revision) {
+    for (int j = 0; j <= level; j++) {
+	C[j].set_n(BLK_UNUSED);
+	C[j].rewrite = false;
+    }
+    read_root(false);
+
+    if (cursor_created_since_last_modification) {
+	cursor_created_since_last_modification = false;
+	++cursor_version;
     }
 }
 
@@ -296,17 +306,6 @@ void
 GlassTable::patch_block(uint4 n, const byte * p)
 {
     LOGCALL_VOID(DB, "GlassTable::patch_block", n | p);
-    for (int j = 0; j <= level; j++) {
-	if (n == C[j].get_n()) {
-	    // when exists, should we write to C[j].p if n == C[j].n
-	    byte *Cp = C[j].get_modifiable_p(block_size);
-	    if (Cp != NULL) {
-		memcpy(Cp, p, block_size);
-	    }
-	    break;
-	}
-    }
-
     write_block(n, p);
 }
 
@@ -1427,7 +1426,7 @@ GlassTable::basic_open(const RootInfo * root_info, glass_revision_number_t rev)
 }
 
 void
-GlassTable::read_root()
+GlassTable::read_root(bool check)
 {
     LOGCALL_VOID(DB, "GlassTable::read_root", NO_ARGS);
     if (faked_root_block) {
@@ -1465,7 +1464,7 @@ GlassTable::read_root()
 	/* using a root block stored on disk */
 	block_to_cursor(C, level, root);
 
-	if (REVISION(C[level].get_p()) > revision_number) set_overwritten();
+	if (check && REVISION(C[level].get_p()) > revision_number) set_overwritten();
 	/* although this is unlikely */
     }
 }

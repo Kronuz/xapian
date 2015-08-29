@@ -591,7 +591,7 @@ class GlassTable {
 	/// Throw an exception indicating that the database is closed.
 	XAPIAN_NORETURN(static void throw_database_closed());
 
-	void patch_version(RootInfo *root_info, const RootInfo &new_root_info);
+	void patch_version(glass_revision_number_t revision, RootInfo *root_info, const RootInfo &new_root_info);
 	void patch_block(uint4 n, const byte *p);
 
     protected:
@@ -620,7 +620,7 @@ class GlassTable {
 	void add_item(Glass::Item_wr kt, int j);
 	void delete_item(int j, bool repeatedly);
 	int add_kt(bool found);
-	void read_root();
+	void read_root(bool check = true);
 	void split_root(uint4 split_n);
 	void form_key(const std::string & key) const;
 

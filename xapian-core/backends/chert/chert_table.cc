@@ -230,25 +230,30 @@ void
 ChertTable::patch_base(const string & name_, char ch)
 {
     LOGCALL_VOID(DB, "ChertTable::patch_base", name_ | ch);
-    int level_;
+    chert_revision_number_t revision;
 
     base.patch(name_, ch);
 
+    revision =         base.get_revision();
     block_size =       base.get_block_size();
     root =             base.get_root();
-    level_ =           base.get_level();
+    level =            base.get_level();
     item_count =       base.get_item_count();
     faked_root_block = base.get_have_fakeroot();
     sequential =       base.get_sequential();
 
-    Btree_modified = true;
+    base_letter = ch;
+    base_letter = other_base_letter();
 
-    if (level != level_) {
-	level = level_;
-	if (cursor_created_since_last_modification) {
-	    cursor_created_since_last_modification = false;
-	    ++cursor_version;
-	}
+    for (int j = 0; j <= level; j++) {
+	C[j].n = BLK_UNUSED;
+	C[j].rewrite = false;
+    }
+    read_root(false);
+
+    if (cursor_created_since_last_modification) {
+	cursor_created_since_last_modification = false;
+	++cursor_version;
     }
 }
 
@@ -256,13 +261,6 @@ void
 ChertTable::patch_block(uint4 n, const byte *p)
 {
     LOGCALL_VOID(DB, "ChertTable::patch_block", n | p);
-    for (int j = 0; j <= level; j++) {
-	if (n == C[j].n) {
-            // when exists, should we write to C[j].p if n == C[j].n
-	    memcpy(C[j].p, p, block_size);
-	    break;
-	}
-    }
     write_block(n, p);
 }
 
@@ -1493,7 +1491,7 @@ ChertTable::basic_open(bool revision_supplied, chert_revision_number_t revision_
 }
 
 void
-ChertTable::read_root()
+ChertTable::read_root(bool check)
 {
     LOGCALL_VOID(DB, "ChertTable::read_root", NO_ARGS);
     if (faked_root_block) {
@@ -1531,7 +1529,7 @@ ChertTable::read_root()
 	/* using a root block stored on disk */
 	block_to_cursor(C, level, root);
 
-	if (REVISION(C[level].p) > revision_number) set_overwritten();
+	if (check && REVISION(C[level].p) > revision_number) set_overwritten();
 	/* although this is unlikely */
     }
 }
