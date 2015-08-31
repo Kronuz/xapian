@@ -709,7 +709,7 @@ class GlassTable {
 	void delete_leaf_item(bool repeatedly);
 	void delete_branch_item(int j);
 	int add_kt(bool found);
-	void read_root(bool check = true);
+	void read_root();
 	void split_root(uint4 split_n);
 	void form_key(const std::string & key) const;
 

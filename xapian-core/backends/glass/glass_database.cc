@@ -1798,7 +1798,19 @@ GlassWritableDatabase::apply_changeset_from_fd(int fd, double end_time)
     stats.read(postlist_table);
 
     flags = postlist_table.get_flags();
-    set_revision_number(flags, endrev);
+    const string & tmpfile = version_file.write(endrev, flags);
+    if (!postlist_table.sync() ||
+	!position_table.sync() ||
+	!termlist_table.sync() ||
+	!synonym_table.sync() ||
+	!spelling_table.sync() ||
+	!docdata_table.sync() ||
+	!version_file.sync(tmpfile, endrev, flags)) {
+	(void)unlink(tmpfile.c_str());
+	throw Xapian::DatabaseError("Commit failed", errno);
+    }
+
+    changes.commit(endrev, flags);
 
     buf.resize(0);
 }

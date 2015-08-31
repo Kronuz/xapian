@@ -284,25 +284,25 @@ GlassTable::patch_version(glass_revision_number_t revision, RootInfo *root_info,
     sequential =       root_info->get_sequential_mode();
     const string & fl_serialised = root_info->get_free_list();
     if (!fl_serialised.empty()) {
-	if (!free_list.unpack(root_info->get_free_list()))
+	if (!free_list.unpack(fl_serialised))
 	    throw Xapian::DatabaseCorruptError("Bad freelist metadata");
     } else {
 	free_list.reset();
     }
 
-    if (sequential) return;
+    Btree_modified = false;
 
-    if (C[level].get_n() != root || REVISION(C[level].get_p()) < revision) {
-    for (int j = 0; j <= level; j++) {
-	C[j].set_n(BLK_UNUSED);
-	C[j].rewrite = false;
+    for (int i = 0; i < BTREE_CURSOR_LEVELS; ++i) {
+	C[i].init(block_size);
     }
-    read_root(false);
 
-    if (cursor_created_since_last_modification) {
-	cursor_created_since_last_modification = false;
-	++cursor_version;
-    }
+    revision_number = revision;
+
+    read_root();
+
+    changed_n = 0;
+    changed_c = DIR_START;
+    seq_count = SEQ_START_POINT;
 }
 
 void
@@ -1674,7 +1674,7 @@ GlassTable::basic_open(const RootInfo * root_info, glass_revision_number_t rev)
 }
 
 void
-GlassTable::read_root(bool check)
+GlassTable::read_root()
 {
     LOGCALL_VOID(DB, "GlassTable::read_root", NO_ARGS);
     if (faked_root_block) {
@@ -1712,7 +1712,7 @@ GlassTable::read_root(bool check)
 	/* using a root block stored on disk */
 	block_to_cursor(C, level, root);
 
-	if (check && REVISION(C[level].get_p()) > revision_number) set_overwritten();
+	if (REVISION(C[level].get_p()) > revision_number) set_overwritten();
 	/* although this is unlikely */
     }
 }
