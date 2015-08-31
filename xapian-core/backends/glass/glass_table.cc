@@ -273,6 +273,7 @@ GlassTable::patch_version(glass_revision_number_t revision, RootInfo *root_info,
 
     *root_info = new_root_info;
 
+    revision_number =  revision;
     set_blocksize(root_info->get_blocksize());
     root =             root_info->get_root();
     level =            root_info->get_level();
@@ -289,12 +290,11 @@ GlassTable::patch_version(glass_revision_number_t revision, RootInfo *root_info,
 
     if (sequential) return;
 
-    if (C[level].get_n() != root || REVISION(C[level].get_p()) < revision) {
     for (int j = 0; j <= level; j++) {
 	C[j].set_n(BLK_UNUSED);
 	C[j].rewrite = false;
     }
-    read_root(false);
+    read_root();
 
     if (cursor_created_since_last_modification) {
 	cursor_created_since_last_modification = false;
@@ -1426,7 +1426,7 @@ GlassTable::basic_open(const RootInfo * root_info, glass_revision_number_t rev)
 }
 
 void
-GlassTable::read_root(bool check)
+GlassTable::read_root()
 {
     LOGCALL_VOID(DB, "GlassTable::read_root", NO_ARGS);
     if (faked_root_block) {
@@ -1464,7 +1464,7 @@ GlassTable::read_root(bool check)
 	/* using a root block stored on disk */
 	block_to_cursor(C, level, root);
 
-	if (check && REVISION(C[level].get_p()) > revision_number) set_overwritten();
+	if (REVISION(C[level].get_p()) > revision_number) set_overwritten();
 	/* although this is unlikely */
     }
 }
