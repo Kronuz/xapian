@@ -77,6 +77,7 @@ GlassVersion::read()
 void
 GlassVersion::read(const std::string & filename)
 {
+fprintf(stderr, "GlassVersion::read: %s\n", filename.c_str());
     LOGCALL_VOID(DB, "GlassVersion::read", NO_ARGS);
     int fd_in = posixy_open(filename.c_str(), O_RDONLY|O_BINARY);
     if (rare(fd_in < 0)) {
@@ -142,6 +143,7 @@ GlassVersion::cancel()
 const string
 GlassVersion::write(glass_revision_number_t new_rev, int flags)
 {
+fprintf(stderr, "GlassVersion::write: %u\n", new_rev);
     LOGCALL(DB, const string, "GlassVersion::write", new_rev|flags);
 
     string s(GLASS_VERSION_MAGIC, GLASS_VERSION_MAGIC_AND_VERSION_LEN);
@@ -266,6 +268,22 @@ RootInfo::init(unsigned blocksize_)
 void
 RootInfo::serialise(string &s) const
 {
+fprintf(stderr, "RootInfo::serialise\n");
+fprintf(stderr, "\t >> root: %u\n", root);
+fprintf(stderr, "\t >> level: %u\n", level);
+fprintf(stderr, "\t >> num_entries: %llu\n", num_entries);
+fprintf(stderr, "\t >> root_is_fake: %u\n", root_is_fake);
+fprintf(stderr, "\t >> sequential_mode: %u\n", sequential_mode);
+const char hexmap[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+size_t len = fl_serialised.size();
+const char *data = fl_serialised.data();
+std::string ss(len * 2, ' ');
+for (size_t i = 0; i < len; ++i) {
+	ss[2 * i]     = hexmap[(data[i] & 0xF0) >> 4];
+	ss[2 * i + 1] = hexmap[data[i] & 0x0F];
+}
+fprintf(stderr, "\t >> fl_serialised: %s\n", ss.c_str());
+
     pack_uint(s, root);
     unsigned val = level << 2;
     if (sequential_mode) val |= 0x02;
@@ -279,6 +297,7 @@ RootInfo::serialise(string &s) const
 bool
 RootInfo::unserialise(const char ** p, const char * end)
 {
+fprintf(stderr, "RootInfo::unserialise\n");
     unsigned val;
     if (!unpack_uint(p, end, &root) ||
 	!unpack_uint(p, end, &val) ||
@@ -290,6 +309,22 @@ RootInfo::unserialise(const char ** p, const char * end)
     root_is_fake = val & 0x01;
     blocksize <<= 11;
     AssertRel(blocksize,>=,2048);
+
+fprintf(stderr, "\t << root: %u\n", root);
+fprintf(stderr, "\t << level: %u\n", level);
+fprintf(stderr, "\t << num_entries: %llu\n", num_entries);
+fprintf(stderr, "\t << root_is_fake: %u\n", root_is_fake);
+fprintf(stderr, "\t << sequential_mode: %u\n", sequential_mode);
+const char hexmap[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+size_t len = fl_serialised.size();
+const char *data = fl_serialised.data();
+std::string ss(len * 2, ' ');
+for (size_t i = 0; i < len; ++i) {
+	ss[2 * i]     = hexmap[(data[i] & 0xF0) >> 4];
+	ss[2 * i + 1] = hexmap[data[i] & 0x0F];
+}
+fprintf(stderr, "\t << fl_serialised: %s\n", ss.c_str());
+
     return true;
 }
 

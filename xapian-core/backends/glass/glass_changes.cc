@@ -104,12 +104,14 @@ GlassChanges::start(glass_revision_number_t old_rev,
 void
 GlassChanges::write_block(const char * p, size_t len)
 {
+fprintf(stderr, "GlassChanges::write_block: %u\n", changes_fd);
     io_write(changes_fd, p, len);
 }
 
 void
 GlassChanges::commit(glass_revision_number_t new_rev, int flags)
 {
+fprintf(stderr, "GlassChanges::commit: %u\n", new_rev);
     if (changes_fd < 0)
 	return;
 

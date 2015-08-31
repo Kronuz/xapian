@@ -192,6 +192,7 @@ GlassTable::read_block(uint4 n, byte * p) const
 void
 GlassTable::write_block(uint4 n, const byte * p, bool appending) const
 {
+fprintf(stderr, "GlassTable::write_block: %u: %u\n", handle, n);
     LOGCALL_VOID(DB, "GlassTable::write_block", n | p | appending);
     Assert(writable);
     /* Check that n is in range. */
@@ -269,6 +270,7 @@ GlassTable::write_block(uint4 n, const byte * p, bool appending) const
 void
 GlassTable::patch_version(glass_revision_number_t revision, RootInfo *root_info, const RootInfo &new_root_info)
 {
+fprintf(stderr, "GlassTable::patch_version: %u\n", revision);
     LOGCALL_VOID(DB, "GlassTable::patch_version", root_info | new_root_info);
 
     *root_info = new_root_info;
@@ -280,6 +282,23 @@ GlassTable::patch_version(glass_revision_number_t revision, RootInfo *root_info,
     faked_root_block = root_info->get_root_is_fake();
     sequential =       root_info->get_sequential_mode();
     const string & fl_serialised = root_info->get_free_list();
+
+fprintf(stderr, "\t + tablename: %s\n", tablename);
+fprintf(stderr, "\t < root: %u\n", root);
+fprintf(stderr, "\t < level: %u\n", level);
+fprintf(stderr, "\t < item_count: %llu\n", item_count);
+fprintf(stderr, "\t < faked_root_block: %u\n", faked_root_block);
+fprintf(stderr, "\t < sequential: %u\n", sequential);
+const char hexmap[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+size_t len = fl_serialised.size();
+const char *data = fl_serialised.data();
+std::string ss(len * 2, ' ');
+for (size_t i = 0; i < len; ++i) {
+	ss[2 * i]     = hexmap[(data[i] & 0xF0) >> 4];
+	ss[2 * i + 1] = hexmap[data[i] & 0x0F];
+}
+fprintf(stderr, "\t < fl_serialised: %s\n", ss.c_str());
+
     if (!fl_serialised.empty()) {
 	if (!free_list.unpack(root_info->get_free_list()))
 	    throw Xapian::DatabaseCorruptError("Bad freelist metadata");
@@ -1397,6 +1416,7 @@ GlassCursor * GlassTable::cursor_get() const {
 void
 GlassTable::basic_open(const RootInfo * root_info, glass_revision_number_t rev)
 {
+fprintf(stderr, "GlassTable::basic_open: %s: %u\n", tablename, rev);
     LOGCALL_VOID(DB, "GlassTable::basic_open", root_info|rev);
     revision_number = rev;
     if (root_info) {
@@ -1629,6 +1649,7 @@ void GlassTable::close(bool permanent) {
 void
 GlassTable::flush_db()
 {
+fprintf(stderr, "GlassTable::flush_db: %s\n", tablename);
     LOGCALL_VOID(DB, "GlassTable::flush_db", NO_ARGS);
     Assert(writable);
     if (handle < 0) {
@@ -1652,6 +1673,7 @@ GlassTable::flush_db()
 void
 GlassTable::commit(glass_revision_number_t revision, RootInfo * root_info)
 {
+fprintf(stderr, "GlassTable::commit: %s: %u\n", tablename, revision);
     LOGCALL_VOID(DB, "GlassTable::commit", revision|root_info);
     Assert(writable);
 

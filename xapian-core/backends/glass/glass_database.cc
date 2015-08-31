@@ -305,6 +305,7 @@ GlassDatabase::get_changeset_revisions(const string & path,
 void
 GlassDatabase::set_revision_number(int flags, glass_revision_number_t new_revision)
 {
+fprintf(stderr, "GlassDatabase::set_revision_number: %u\n", new_revision);
     LOGCALL_VOID(DB, "GlassDatabase::set_revision_number", flags|new_revision);
 
     glass_revision_number_t rev = version_file.get_revision();
@@ -1548,6 +1549,7 @@ GlassWritableDatabase::process_changeset_chunk_version(string & buf,
 						       RemoteConnection & conn,
 						       double end_time)
 {
+fprintf(stderr, "GlassWritableDatabase::process_changeset_chunk_version\n");
     const char *ptr = buf.data();
     const char *end = ptr + buf.size();
 
@@ -1601,6 +1603,7 @@ GlassWritableDatabase::process_changeset_chunk_blocks(Glass::table_type table,
 						      RemoteConnection & conn,
 						      double end_time)
 {
+fprintf(stderr, "GlassWritableDatabase::process_changeset_chunk_blocks\n");
     GlassTable *tables[] = {
 	&postlist_table,
 	&docdata_table,
@@ -1635,6 +1638,7 @@ GlassWritableDatabase::process_changeset_chunk_blocks(Glass::table_type table,
 void
 GlassWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
 {
+fprintf(stderr, "GlassWritableDatabase::apply_changesets_from_fd\n");
     LOGCALL_VOID(DB, "GlassWritableDatabase::apply_changesets_from_fd", fd | end_time);
 
     RemoteConnection conn(fd, -1, string());
@@ -1701,6 +1705,7 @@ GlassWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
     spelling_table.set_changes(p);
     docdata_table.set_changes(p);
 
+fprintf(stderr, "++ CHUNKS\n");
     // Read the items from the changeset.
     while (true) {
 	conn.get_message_chunk(buf, REASONABLE_CHANGESET_SIZE, end_time);
@@ -1739,8 +1744,10 @@ GlassWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
     if (ptr != end)
 	throw NetworkError("Junk found at end of changeset");
 
+fprintf(stderr, "++ READ STATS\n");
     stats.read(postlist_table);
 
+fprintf(stderr, "++ SET REVISION: %u\n", endrev);
     flags = postlist_table.get_flags();
     const string & tmpfile = version_file.write(endrev, flags);
     if (!postlist_table.sync() ||
@@ -1756,5 +1763,6 @@ GlassWritableDatabase::apply_changesets_from_fd(int fd, double end_time)
 
     changes.commit(endrev, flags);
 
+fprintf(stderr, "++ DONE!\n");
     buf.resize(0);
 }
