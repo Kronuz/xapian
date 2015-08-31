@@ -273,7 +273,6 @@ GlassTable::patch_version(glass_revision_number_t revision, RootInfo *root_info,
 
     *root_info = new_root_info;
 
-    revision_number =  revision;
     set_blocksize(root_info->get_blocksize());
     root =             root_info->get_root();
     level =            root_info->get_level();
@@ -288,18 +287,32 @@ GlassTable::patch_version(glass_revision_number_t revision, RootInfo *root_info,
 	free_list.reset();
     }
 
-    if (sequential) return;
+    Btree_modified = false;
 
-    for (int j = 0; j <= level; j++) {
-	C[j].set_n(BLK_UNUSED);
-	C[j].rewrite = false;
+    for (int i = 0; i < BTREE_CURSOR_LEVELS; ++i) {
+	C[i].init(block_size);
     }
+
+    free_list.set_revision(revision);
+    free_list.commit(this, block_size);
+
+    // Save the freelist details into the root_info.
+    string serialised;
+    free_list.pack(serialised);
+    root_info->set_free_list(serialised);
+
+    revision_number = revision;
+
     read_root();
 
     if (cursor_created_since_last_modification) {
 	cursor_created_since_last_modification = false;
 	++cursor_version;
     }
+
+    changed_n = 0;
+    changed_c = DIR_START;
+    seq_count = SEQ_START_POINT;
 }
 
 void
