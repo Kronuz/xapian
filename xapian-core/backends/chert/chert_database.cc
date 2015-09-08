@@ -1825,9 +1825,9 @@ ChertWritableDatabase::process_changeset_chunk_blocks(const string & tablename,
 }
 
 void
-ChertWritableDatabase::apply_changeset_from_fd(int fd, double end_time)
+ChertWritableDatabase::apply_changeset_from_fd(int fd, bool check_revision, double end_time)
 {
-    LOGCALL_VOID(DB, "ChertWritableDatabase::apply_changeset_from_fd", fd | end_time);
+    LOGCALL_VOID(DB, "ChertWritableDatabase::apply_changeset_from_fd", fd | check_revision | end_time);
 
     RemoteConnection conn(fd, -1, string());
 
@@ -1870,7 +1870,7 @@ ChertWritableDatabase::apply_changeset_from_fd(int fd, double end_time)
         throw NetworkError("Unexpected end of changeset (1)");
 
     // Check the revision number.
-    if (startrev != record_table.get_open_revision_number())
+    if (check_revision && startrev != record_table.get_open_revision_number())
         throw NetworkError("Changeset supplied is for wrong revision number");
 
     unsigned char changes_type = *ptr++;

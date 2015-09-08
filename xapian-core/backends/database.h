@@ -528,7 +528,7 @@ class Database::Internal : public Xapian::Internal::intrusive_base {
 	 *  This call may reopen the database, leaving it pointing to a more
 	 *  recent version of the database.
 	 */
-	virtual void apply_changeset_from_fd(int fd, double end_time);
+	virtual void apply_changeset_from_fd(int fd, bool check_revision, double end_time);
 
 	/** Find lowest and highest docids actually in use.
 	 *

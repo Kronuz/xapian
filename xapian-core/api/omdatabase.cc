@@ -1031,12 +1031,12 @@ WritableDatabase::get_description() const
 }
 
 void
-WritableDatabase::apply_changeset_from_fd(int fd)
+WritableDatabase::apply_changeset_from_fd(int fd, bool check_revision)
 {
-    LOGCALL_VOID(API, "WritableDatabase::apply_changeset_from_fd", fd);
+    LOGCALL_VOID(API, "WritableDatabase::apply_changeset_from_fd", fd | check_revision);
     if (rare(internal.empty()))
         no_subdatabases();
-    internal[0]->apply_changeset_from_fd(fd, 0.0);
+    internal[0]->apply_changeset_from_fd(fd, check_revision, 0.0);
 }
 
 }

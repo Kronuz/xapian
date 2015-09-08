@@ -356,7 +356,7 @@ Database::Internal::write_changesets_to_fd(int, const string &, bool, Replicatio
 }
 
 void
-Database::Internal::apply_changeset_from_fd(int, double)
+Database::Internal::apply_changeset_from_fd(int, bool, double)
 {
     // Writable databases should override this method.
     Assert(false);
