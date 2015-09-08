@@ -419,7 +419,7 @@ class GlassWritableDatabase : public GlassDatabase {
 	void set_metadata(const string & key, const string & value);
 	void invalidate_doc_object(Xapian::Document::Internal * obj) const;
 
-	void apply_changeset_from_fd(int fd, double end_time);
+	void apply_changeset_from_fd(int fd, bool check_revision, double end_time);
 	//@}
 };
 

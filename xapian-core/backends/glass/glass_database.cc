@@ -1635,9 +1635,9 @@ GlassWritableDatabase::process_changeset_chunk_blocks(Glass::table_type table,
 }
 
 void
-GlassWritableDatabase::apply_changeset_from_fd(int fd, double end_time)
+GlassWritableDatabase::apply_changeset_from_fd(int fd, bool check_revision, double end_time)
 {
-    LOGCALL_VOID(DB, "GlassWritableDatabase::apply_changeset_from_fd", fd | end_time);
+    LOGCALL_VOID(DB, "GlassWritableDatabase::apply_changeset_from_fd", fd | check_revision | end_time);
 
     RemoteConnection conn(fd, -1, string());
 
@@ -1678,7 +1678,7 @@ GlassWritableDatabase::apply_changeset_from_fd(int fd, double end_time)
 	throw NetworkError("Unexpected end of changeset (1)");
 
     // Check the revision number.
-    if (startrev != version_file.get_revision())
+    if (check_revision && startrev != version_file.get_revision())
 	throw NetworkError("Changeset supplied is for wrong revision number");
 
     unsigned char changes_type = *ptr++;

@@ -942,7 +942,7 @@ class XAPIAN_VISIBILITY_DEFAULT WritableDatabase : public Database {
 	/// Return a string describing this object.
 	std::string get_description() const;
 
-	void apply_changeset_from_fd(int fd);
+	void apply_changeset_from_fd(int fd, bool check_revision=true);
 };
 
 }
