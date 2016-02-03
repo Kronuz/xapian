@@ -750,6 +750,23 @@ Database::get_uuid() const
     RETURN(uuid);
 }
 
+std::string
+Database::get_revision_info() const
+{
+    LOGCALL(API, std::string, "Database::get_revision_info", NO_ARGS);
+    string revision_info;
+    for (size_t i = 0; i < internal.size(); ++i) {
+	string sub_revision_info = internal[i]->get_revision_info();
+	// If any of the sub-databases have no revision_info, we can't make a revision_info for
+	// the combined database.
+	if (sub_revision_info.empty())
+	    RETURN(sub_revision_info);
+	if (!revision_info.empty()) revision_info += ':';
+	revision_info += sub_revision_info;
+    }
+    RETURN(revision_info);
+}
+
 ///////////////////////////////////////////////////////////////////////////
 
 WritableDatabase::WritableDatabase() : Database()

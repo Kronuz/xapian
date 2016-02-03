@@ -481,6 +481,13 @@ class XAPIAN_VISIBILITY_DEFAULT Database {
 	 */
 	std::string get_uuid() const;
 
+	/** Get the revision info for the database.
+	 *
+	 *  The revision info is a string representation describing the current
+	 *  revision of the database.
+	 */
+	std::string get_revision_info() const;
+
 	/** Check the integrity of a database or database table.
 	 *
 	 *  @param path	Path to database or table
