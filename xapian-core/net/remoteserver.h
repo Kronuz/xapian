@@ -27,8 +27,8 @@
 #include "xapian/registry.h"
 #include "xapian/visibility.h"
 #include "xapian/weight.h"
-
 #include "xapian/remoteprotocol.h"
+
 #include "remoteconnection.h"
 
 #include <vector>
@@ -52,19 +52,17 @@ class XAPIAN_VISIBILITY_DEFAULT RemoteServer : private RemoteConnection, public 
     Xapian::WritableDatabase * wdb;
 
     /// Accept a message from the client.
-    message_type get_message(double timeout, std::string & result,
-			     message_type required_type = MSG_MAX);
-
-    /// Send a message to the client.
-    void send_message(reply_type type, const std::string &message);
+    int get_message(double timeout, std::string & result, int required_type);
 
     /// Send a message to the client, with specific end_time.
-    void send_message(reply_type type, const std::string &message,
-		      double end_time);
+    void send_message(int type, const std::string &message, double end_time);
 
-    Xapian::Database * get_db(bool writable_);
+    Xapian::Database * get_db();
+    Xapian::WritableDatabase * get_wdb();
     void release_db(Xapian::Database *) {};
     void select_db(const std::vector<std::string> &dbpaths_, bool writable_, int flags);
+
+    void shutdown();
 
   public:
     /** Construct a RemoteServer.
@@ -94,12 +92,6 @@ class XAPIAN_VISIBILITY_DEFAULT RemoteServer : private RemoteConnection, public 
      *  non-Xapian exception is thrown.
      */
     void run();
-
-    /// Get the registry used for (un)serialisation.
-    const Xapian::Registry & get_registry() const { return reg; }
-
-    /// Set the registry used for (un)serialisation.
-    void set_registry(const Xapian::Registry & reg_) { reg = reg_; }
 };
 
 #endif // XAPIAN_INCLUDED_REMOTESERVER_H

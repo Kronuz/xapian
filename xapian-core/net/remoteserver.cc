@@ -20,8 +20,6 @@
  */
 
 #include <config.h>
-#include "remoteserver.h"
-
 #include "xapian/constants.h"
 #include "xapian/database.h"
 #include "xapian/error.h"
@@ -30,6 +28,7 @@
 #include <signal.h>
 #include <string>
 
+#include "remoteserver.h"
 #include "omassert.h"
 #include "realtime.h"
 #include "serialise.h"
@@ -38,12 +37,13 @@
 
 
 Xapian::Database *
-RemoteServer::get_db(bool writable_) {
-    if (writable_) {
-	return wdb;
-    } else {
-	return db;
-    }
+RemoteServer::get_db() {
+    return db;
+}
+
+Xapian::WritableDatabase *
+RemoteServer::get_wdb() {
+    return wdb;
 }
 
 void
@@ -61,7 +61,7 @@ RemoteServer::select_db(const std::vector<std::string> &dbpaths_, bool writable_
 	// in the variable context.  FIXME: improve Database::get_description()
 	// and then just use that instead.
 	context = dbpaths_[0];
-	if (!writable) {
+	if (!is_writable()) {
 	    std::vector<std::string>::const_iterator i(dbpaths_.begin());
 	    for (++i; i != dbpaths_.end(); ++i) {
 		db->add_database(Xapian::Database(*i));
@@ -72,9 +72,15 @@ RemoteServer::select_db(const std::vector<std::string> &dbpaths_, bool writable_
 	    AssertEq(dbpaths_.size(), 1); // Expecting exactly one database.
 	}
     }
-    dbpaths = dbpaths_;
+    set_dbpaths(dbpaths_);
 }
 
+void
+RemoteServer::shutdown()
+{
+    // Handle "shutdown connection" message, throw ConnectionClosed.
+    throw ConnectionClosed();
+}
 
 RemoteServer::RemoteServer(const std::vector<std::string> &dbpaths_,
 			   int fdin_, int fdout_,
@@ -93,7 +99,7 @@ RemoteServer::RemoteServer(const std::vector<std::string> &dbpaths_,
 	select_db(dbpaths_, false, Xapian::DB_OPEN);
     } catch (const Xapian::Error &err) {
 	// Propagate the exception to the client.
-	send_message(REPLY_EXCEPTION, serialise_error(err));
+	send_exception(serialise_error(err));
 	// And rethrow it so our caller can log it and close the connection.
 	throw;
     }
@@ -105,8 +111,7 @@ RemoteServer::RemoteServer(const std::vector<std::string> &dbpaths_,
 	throw Xapian::NetworkError("Couldn't set SIGPIPE to SIG_IGN", errno);
 #endif
 
-    // Send greeting message.
-    msg_update(std::string());
+    send_greeting();
 }
 
 RemoteServer::~RemoteServer()
@@ -115,45 +120,20 @@ RemoteServer::~RemoteServer()
     // wdb is either NULL or equal to db, so we shouldn't delete it too!
 }
 
-message_type
-RemoteServer::get_message(double timeout, std::string & result,
-			  message_type required_type_)
+int
+RemoteServer::get_message(double timeout, std::string & result, int)
 {
     double end_time = RealTime::end_time(timeout);
     int type = RemoteConnection::get_message(result, end_time);
-
-    // Handle "shutdown connection" message here.  Treat EOF here for a read-only
-    // database the same way since a read-only client just closes the
-    // connection when done.
-    if (type == MSG_SHUTDOWN || (type < 0 && wdb == NULL))
-	throw ConnectionClosed();
-    if (type < 0)
-	throw Xapian::NetworkError("Connection closed unexpectedly");
-    if (type >= MSG_MAX) {
-	std::string errmsg("Invalid message type ");
-	errmsg += str(type);
-	throw Xapian::NetworkError(errmsg);
-    }
-    if (required_type_ != MSG_MAX && type != int(required_type_)) {
-	std::string errmsg("Expecting message type ");
-	errmsg += str(int(required_type_));
-	errmsg += ", got ";
-	errmsg += str(int(type));
-	throw Xapian::NetworkError(errmsg);
-    }
-    return static_cast<message_type>(type);
+    // Treat EOF here for a read-only database as a connection closed since
+    // a read-only client just closes the connection when done.
+    if (type < 0 && wdb == NULL)
+        throw ConnectionClosed();
+    return type;
 }
 
 void
-RemoteServer::send_message(reply_type type, const std::string &message)
-{
-    double end_time = RealTime::end_time(active_timeout);
-    unsigned char type_as_char = static_cast<unsigned char>(type);
-    RemoteConnection::send_message(type_as_char, message, end_time);
-}
-
-void
-RemoteServer::send_message(reply_type type, const std::string &message, double end_time) {
+RemoteServer::send_message(int type, const std::string &message, double end_time) {
     unsigned char type_as_char = static_cast<unsigned char>(type);
     RemoteConnection::send_message(type_as_char, message, end_time);
 }

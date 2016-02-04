@@ -26,6 +26,7 @@
 #include "backends/database.h"
 #include "api/omenquireinternal.h"
 #include "api/queryinternal.h"
+#include "net/remoteprotocol.h"
 #include "net/remoteconnection.h"
 #include "backends/valuestats.h"
 #include "xapian/weight.h"

@@ -20,6 +20,7 @@
 
 #include <config.h>
 
+#include "remoteprotocol.h"
 #include "remoteconnection.h"
 
 #include <xapian/error.h>

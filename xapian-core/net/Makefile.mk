@@ -3,6 +3,7 @@ noinst_HEADERS +=\
 	net/progclient.h\
 	net/remoteconnection.h\
 	net/remoteserver.h\
+	net/remoteprotocol.h\
 	net/remotetcpclient.h\
 	net/remotetcpserver.h\
 	net/replicatetcpclient.h\
