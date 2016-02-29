@@ -44,6 +44,7 @@
 #include "api/omenquireinternal.h"
 #include "str.h"
 #include "weight/weightinternal.h"
+#include "net/serialise.h"
 
 #include <algorithm>
 #include "autoptr.h"
@@ -137,6 +138,20 @@ RSet::Internal::get_description() const
     description += ')';
 
     return description;
+}
+
+std::string
+RSet::serialise() const
+{
+    LOGCALL(API, std::string, "RSet::serialise", NO_ARGS);
+    RETURN(serialise_rset(*this));
+}
+
+RSet
+RSet::unserialise(const std::string &s)
+{
+    LOGCALL_STATIC(API, RSet, "RSet::unserialise", s);
+    RETURN(unserialise_rset(s));
 }
 
 namespace Internal {
@@ -356,6 +371,20 @@ MSet::get_description() const
     return "Xapian::MSet(" + internal->get_description() + ")";
 }
 
+std::string
+MSet::serialise() const
+{
+    LOGCALL(API, std::string, "MSet::serialise", NO_ARGS);
+    RETURN(serialise_mset(*this));
+}
+
+MSet
+MSet::unserialise(const std::string &s)
+{
+    LOGCALL_STATIC(API, MSet, "MSet::unserialise", s);
+    RETURN(unserialise_mset(s.data(), s.data() + s.size()));
+}
+
 int
 MSet::Internal::convert_to_percent_internal(double wt) const
 {
@@ -563,6 +592,40 @@ Enquire::Internal::get_query() const
     return query;
 }
 
+void
+Enquire::Internal::unserialise_stats(const string& serialised)
+{
+    stats.reset(new Xapian::Weight::Internal);
+    ::unserialise_stats(serialised, *(stats.get()));
+    stats->set_bounds_from_db(db);
+}
+
+const string
+Enquire::Internal::serialise_stats() const
+{
+    return ::serialise_stats(*(stats.get()));
+}
+
+void
+Enquire::Internal::prepare_mset(const RSet *rset,
+				const MatchDecider *mdecider) const
+{
+    LOGCALL(MATCH, MSet, "Enquire::Internal::prepare_mset", rset | mdecider);
+
+    if (percent_cutoff && (sort_by == VAL || sort_by == VAL_REL)) {
+	throw Xapian::UnimplementedError("Use of a percentage cutoff while sorting primary by value isn't currently supported");
+    }
+
+    stats.reset(new Xapian::Weight::Internal);
+    match.reset(new ::MultiMatch(db, query, qlen, rset,
+				 collapse_max, collapse_key,
+				 percent_cutoff, weight_cutoff,
+				 order, sort_key, sort_by, sort_value_forward,
+				 time_limit, *(stats.get()), weight, spies,
+				 (sorter.get() != NULL),
+				 (mdecider != NULL)));
+}
+
 MSet
 Enquire::Internal::get_mset(Xapian::doccount first, Xapian::doccount maxitems,
 			    Xapian::doccount check_at_least, const RSet *rset,
@@ -587,35 +650,41 @@ Enquire::Internal::get_mset(Xapian::doccount first, Xapian::doccount maxitems,
 	check_at_least = max(check_at_least, first + maxitems);
     }
 
-    AutoPtr<Xapian::Weight::Internal> stats(new Xapian::Weight::Internal);
-    ::MultiMatch match(db, query, qlen, rset,
-		       collapse_max, collapse_key,
-		       percent_cutoff, weight_cutoff,
-		       order, sort_key, sort_by, sort_value_forward,
-		       time_limit, *(stats.get()), weight, spies,
-		       (sorter.get() != NULL),
-		       (mdecider != NULL));
-    // Run query and put results into supplied Xapian::MSet object.
-    MSet retval;
-    match.get_mset(first, maxitems, check_at_least, retval,
-		   *(stats.get()), mdecider, sorter.get());
-    if (first_orig != first && retval.internal.get()) {
-	retval.internal->firstitem = first_orig;
+    try {
+	if (!stats || !match) {
+	    prepare_mset(rset, mdecider);
+	}
+
+	// Run query and put results into supplied Xapian::MSet object.
+	MSet retval;
+	match->get_mset(first, maxitems, check_at_least, retval,
+		    *(stats.get()), mdecider, sorter.get());
+	if (first_orig != first && retval.internal.get()) {
+	    retval.internal->firstitem = first_orig;
+	}
+
+	Assert(weight->name() != "bool" || retval.get_max_possible() == 0);
+
+	// The Xapian::MSet needs to have a pointer to ourselves, so that it can
+	// retrieve the documents.  This is set here explicitly to avoid having
+	// to pass it into the matcher, which gets messy particularly in the
+	// networked case.
+	retval.internal->enquire = this;
+
+	if (!retval.internal->stats) {
+	    retval.internal->stats = stats.release();
+	} else {
+	    stats.reset();
+	}
+
+	match.reset();
+
+	RETURN(retval);
+    } catch(...) {
+	stats.reset();
+	match.reset();
+	throw;
     }
-
-    Assert(weight->name() != "bool" || retval.get_max_possible() == 0);
-
-    // The Xapian::MSet needs to have a pointer to ourselves, so that it can
-    // retrieve the documents.  This is set here explicitly to avoid having
-    // to pass it into the matcher, which gets messy particularly in the
-    // networked case.
-    retval.internal->enquire = this;
-
-    if (!retval.internal->stats) {
-	retval.internal->stats = stats.release();
-    }
-
-    RETURN(retval);
 }
 
 ESet
@@ -954,6 +1023,27 @@ void
 Enquire::set_time_limit(double time_limit)
 {
     internal->time_limit = time_limit;
+}
+
+void
+Enquire::unserialise_stats(const string& serialised)
+{
+    internal->unserialise_stats(serialised);
+}
+
+const string
+Enquire::serialise_stats() const
+{
+    RETURN(internal->serialise_stats());
+}
+
+void
+Enquire::prepare_mset(const RSet *rset,
+		      const MatchDecider *mdecider) const
+{
+    LOGCALL(API, Xapian::MSet, "Xapian::Enquire::prepare_mset", maxitems | rset | mdecider);
+
+    internal->prepare_mset(rset, mdecider);
 }
 
 MSet

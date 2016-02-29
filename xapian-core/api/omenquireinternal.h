@@ -38,6 +38,7 @@
 #include <set>
 #include <unordered_map>
 
+#include "autoptr.h"
 #include "weight/weightinternal.h"
 
 using namespace std;
@@ -152,6 +153,9 @@ class Enquire::Internal : public Xapian::Internal::intrusive_base {
 
 	Xapian::Internal::opt_intrusive_ptr<KeyMaker> sorter;
 
+	mutable AutoPtr<Xapian::Weight::Internal> stats;
+	mutable AutoPtr<::MultiMatch> match;
+
 	double time_limit;
 
 	/** The weight to use for this query.
@@ -184,6 +188,13 @@ class Enquire::Internal : public Xapian::Internal::intrusive_base {
 
 	void set_query(const Query & query_, termcount qlen_);
 	const Query & get_query() const;
+
+	void unserialise_stats(const string& serialised);
+	const string serialise_stats() const;
+
+	void prepare_mset(const RSet *omrset,
+			  const MatchDecider *mdecider) const;
+
 	MSet get_mset(Xapian::doccount first, Xapian::doccount maxitems,
 		      Xapian::doccount check_at_least,
 		      const RSet *omrset,

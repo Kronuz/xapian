@@ -111,6 +111,20 @@ class XAPIAN_VISIBILITY_DEFAULT RSet {
 
 	/// Return a string describing this object.
 	std::string get_description() const;
+
+	/** Serialise RSet into a string.
+	 *
+	 *  The document representation may change between Xapian releases:
+	 *  even between minor versions.  However, it is guaranteed not to
+	 *  change if the remote database protocol has not changed between
+	 *  releases.
+	 */
+	std::string serialise() const;
+
+	/** Unserialise a document from a string produced by serialise().
+	 */
+	static RSet unserialise(const std::string &serialised);
+
 };
 
 /** Base class for matcher decision functor.
@@ -502,6 +516,9 @@ class XAPIAN_VISIBILITY_DEFAULT Enquire {
 	 */
 	void set_time_limit(double time_limit);
 
+	void unserialise_stats(const std::string& serialised);
+	const std::string serialise_stats() const;
+
 	/** Get (a portion of) the match set for the current query.
 	 *
 	 *  @param first     the first item in the result set to return.
@@ -538,6 +555,8 @@ class XAPIAN_VISIBILITY_DEFAULT Enquire {
 	 *
 	 *  @exception Xapian::InvalidArgumentError  See class documentation.
 	 */
+	void prepare_mset(const RSet * omrset = 0,
+			  const MatchDecider * mdecider = 0) const;
 	MSet get_mset(Xapian::doccount first, Xapian::doccount maxitems,
 		      Xapian::doccount checkatleast = 0,
 		      const RSet * omrset = 0,

@@ -279,6 +279,19 @@ class XAPIAN_VISIBILITY_DEFAULT MSet {
     /// Return a string describing this object.
     std::string get_description() const;
 
+    /** Serialise MSet into a string.
+     *
+     *  The document representation may change between Xapian releases:
+     *  even between minor versions.  However, it is guaranteed not to
+     *  change if the remote database protocol has not changed between
+     *  releases.
+     */
+    std::string serialise() const;
+
+    /** Unserialise a document from a string produced by serialise().
+     */
+    static MSet unserialise(const std::string &serialised);
+
     /** @private @internal MSet is what the C++ STL calls a container.
      *
      *  The following typedefs allow the class to be used in templates in the
