@@ -74,11 +74,11 @@ class RemoteTcpClient : SOCKET_INITIALIZER_MIXIN public RemoteDatabase {
      *	@param flags		Xapian::DB_RETRY_LOCK or 0.
      */
     RemoteTcpClient(const std::string & hostname, int port,
-		    double timeout_, double timeout_connect, bool writable,
-		    int flags)
+		    double timeout_, double timeout_connect, bool writable_,
+		    int flags_, const std::string & dir)
 	: RemoteDatabase(open_socket(hostname, port, timeout_connect),
 			 timeout_, get_tcpcontext(hostname, port),
-			 writable, flags) { }
+			 writable_, flags_, dir) { }
 
     /** Destructor. */
     ~RemoteTcpClient();
