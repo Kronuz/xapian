@@ -84,6 +84,18 @@ class XAPIAN_VISIBILITY_DEFAULT Document {
 	 */
 	void operator=(const Document &other);
 
+	/** Move is allowed.  Moving is free.
+	 *
+	 *  @param other	The object to move.
+	 */
+	Document(Document&& other);
+
+	/** Move assignment is allowed.  Moving is free.
+	 *
+	 *  @param other	The object to copy.
+	 */
+	void operator=(Document&& other);
+
 	/// Make a new empty Document
 	Document();
 

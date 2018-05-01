@@ -86,6 +86,18 @@ Document::Document(const Document &other)
 {
 }
 
+void
+Document::operator=(Document&& other)
+{
+	internal = std::move(other.internal);
+}
+
+
+Document::Document(Document&& other)
+	: internal(std::move(other.internal))
+{
+}
+
 Document::~Document()
 {
 }
