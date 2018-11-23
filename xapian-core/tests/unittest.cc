@@ -717,6 +717,18 @@ class B : public Xapian::Internal::opt_intrusive_base {
     }
 };
 
+class C {
+public:
+    Xapian::Internal::internal_intrusive_ptr<A, C> internal;
+
+    C() : internal(new A{0}) {}
+    C(int x) : internal(new A{x}) {}
+
+    int get_x() const {
+	return internal->get_x();
+    }
+};
+
 static bool test_movesupport1()
 {
     {
@@ -747,6 +759,24 @@ static bool test_movesupport1()
 	// Test move assignment
 	p3 = std::move(p2);
 	TEST_EQUAL(p3->get_x(), 5);
+    }
+
+    {
+	// Same test for internal_intrusive_ptr class
+	C c1{5};
+	C c3;
+
+	// Test move constructor
+	C c2{std::move(c1)};
+	TEST_EQUAL(c2.get_x(), 5);
+	TEST_NOT_EQUAL(c1.internal.get(), 0);
+	TEST_EQUAL(c1.get_x(), 0);
+
+	// Test move assignment
+	c3 = std::move(c2);
+	TEST_EQUAL(c3.get_x(), 5);
+	TEST_NOT_EQUAL(c2.internal.get(), 0);
+	TEST_EQUAL(c2.get_x(), 0);
     }
 
     bool alive = false;
